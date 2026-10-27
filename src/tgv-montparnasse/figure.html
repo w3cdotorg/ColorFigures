@@ -81,7 +81,7 @@ function kit(){ const parts = [];
   const put = (b, svg) => { if (svg) parts.push({ box: b, svg }); };
   return { parts, put,
     bx: (x0, y0, z0, x1, y1, z1, M, sh = tone, w = .8) => put([[x0, y0, z0], [x1, y1, z1]], box(x0, y0, z0, x1, y1, z1, M, sh, w)),
-    rd: (a, b, r, M, sh = tone, w = .8, r1 = r, n = 12) => put(rbox(a, b, r, r1), rod(a, b, r, M, sh, w, r1, n)) }; }
+    rd: (a, b, r, M, sh = tone, w = .8, r1 = r, n = 8) => put(rbox(a, b, r, r1), rod(a, b, r, M, sh, w, r1, n)) }; }
 // a thin line (wire, rope, cable) cut into short pieces, each with its own box, so it sorts with the solids it passes
 function lineParts(K, pts, col, w, L = 12, edge = true){
   for (let i = 0; i < pts.length - 1; i++){ const a = pts[i], b = pts[i + 1], n = Math.max(1, Math.ceil(Math.hypot(...sub(b, a)) / L));
@@ -91,24 +91,33 @@ function lineParts(K, pts, col, w, L = 12, edge = true){
 function lcSort(parts){
   const it = parts.filter(Boolean).map(p => { const b = p.box, X = [], Y = [];
     for (const x of [b[0][0], b[1][0]]) for (const y of [b[0][1], b[1][1]]) for (const z of [b[0][2], b[1][2]]){ const q = P(x, y, z); X.push(q[0]); Y.push(q[1]); }
-    return { p, d: depthOf(boxMid(b)), x0: Math.min(...X), x1: Math.max(...X), y0: Math.min(...Y), y1: Math.max(...Y), out: [], i: -1, low: 0, on: false }; });
+    return { p, d: depthOf(boxMid(b)), x0: Math.min(...X), x1: Math.max(...X), y0: Math.min(...Y), y1: Math.max(...Y), out: [], hard: [], i: -1, low: 0, on: false }; });
   for (let i = 0; i < it.length; i++) for (let j = i + 1; j < it.length; j++){ const a = it[i], b = it[j];
     if (a.x1 <= b.x0 || b.x1 <= a.x0 || a.y1 <= b.y0 || b.y1 <= a.y0) continue;
     let s = 0, clash = false;
     for (let k = 0; k < 3; k++){ if (Math.abs(CAM_V[k]) < 1e-3) continue; const A = a.p.box, B = b.p.box, v = A[1][k] <= B[0][k] + 1e-6 ? (CAM_V[k] >= 0 ? -1 : 1) : B[1][k] <= A[0][k] + 1e-6 ? (CAM_V[k] >= 0 ? 1 : -1) : 0;
       if (v && s && v !== s) clash = true; if (v) s = v; }
     if (clash) continue;
-    if (!s) s = a.d <= b.d ? -1 : 1;
-    if (s < 0) a.out.push(b); else b.out.push(a); }
+    const hard = !!s; if (!s) s = a.d <= b.d ? -1 : 1;
+    const [u, v] = s < 0 ? [a, b] : [b, a]; u.out.push(v); if (hard) u.hard.push(v); }
   let n = 0; const stk = [], comps = [];
   const visit = v => { v.i = v.low = n++; stk.push(v); v.on = true;
     for (const w of v.out){ if (w.i < 0){ visit(w); v.low = Math.min(v.low, w.low); } else if (w.on) v.low = Math.min(v.low, w.i); }
     if (v.low === v.i){ const c = []; let w; do { w = stk.pop(); w.on = false; c.push(w); } while (w !== v); comps.push(c); } };
   for (const v of it.slice().sort((a, b) => a.d - b.d)) if (v.i < 0) visit(v);
-  return comps.reverse().map(c => c.sort((a, b) => a.d - b.d).map(v => v.p.svg).join('')).join('');
+  // inside a cycle, separated boxes still keep their order (hard edges); only the depth guesses give way
+  const inside = c => { if (c.length < 2) return c; const set = new Set(c), indeg = new Map(c.map(v => [v, 0]));
+    for (const v of c) for (const w of v.hard) if (set.has(w)) indeg.set(w, indeg.get(w) + 1);
+    const left = new Set(c), out = [];
+    while (left.size){ let pick = null;
+      for (const v of left) if (!indeg.get(v) && (!pick || v.d < pick.d)) pick = v;
+      if (!pick) for (const v of left) if (!pick || v.d < pick.d) pick = v;
+      left.delete(pick); out.push(pick); for (const w of pick.hard) if (left.has(w)) indeg.set(w, indeg.get(w) - 1); }
+    return out; };
+  return comps.reverse().map(c => inside(c).map(v => v.p.svg).join('')).join('');
 }
 // a turned part round a vertical axis at (x, y), from a profile [[z, r], ...] bottom to top
-function lathe(x, y, prof, M, w = 1.1, n = 20, sh = tone){
+function lathe(x, y, prof, M, w = 1.1, n = 14, sh = tone){
   const R = prof.map(([z, r]) => on(PZ(z), ellUV(x, y, Math.max(r, .05), Math.max(r, .05), n))); let s = '';
   for (let i = 0; i < R.length - 1; i++) s += loft(R[i], R[i + 1], nr => sh(nr, M));
   s += fill(pd(R[R.length - 1]), sh([0,0,1], M));
@@ -134,10 +143,10 @@ function hollowBox(x0, y0, z0, x1, y1, z1, M, contents, farOp = 1, nearOp = .3, 
 }
 // a plate wheel on an axle along x (TGV wheels are solid discs): tyre band, face with its hub toward the viewer
 function wheelX(xa, xb, y, z, r, M, ang){
-  const A = on(PX(xa), ellUV(y, z, r, r, 26)), B = on(PX(xb), ellUV(y, z, r, r, 26));
+  const A = on(PX(xa), ellUV(y, z, r, r, 18)), B = on(PX(xb), ellUV(y, z, r, r, 18));
   let s = loft(A, B, n => tone(n, TYRE));
   const fx = facing([1,0,0]) ? xb + .02 : facing([-1,0,0]) ? xa - .02 : null;
-  if (fx != null){ const nx = fx > xb ? 1 : -1, rg = (rr, dy = 0, dz = 0) => on(PX(fx), ellUV(y + dy, z + dz, rr, rr, 22));
+  if (fx != null){ const nx = fx > xb ? 1 : -1, rg = (rr, dy = 0, dz = 0) => on(PX(fx), ellUV(y + dy, z + dz, rr, rr, 16));
     s += `<path d="${pd(rg(r))}${pd(rg(r*.86).reverse())}" fill="${tone([nx,0,0], TYRE)}" fill-rule="evenodd"/>` + shape(rg(r*.86), tone([nx,0,0], M), .6)
       + shape(rg(r*.3), tone([nx,0,0], STEEL), .6) + ink(pd(rg(r)), .8);
     for (let i = 0; i < 4; i++){ const a = ang + i*Math.PI/2; s += fill(pd(rg(r*.07, r*.55*Math.cos(a), r*.55*Math.sin(a))), INK); } }
@@ -150,15 +159,13 @@ const txSide = (x, y, z, str, size, col, sg, fam = 'ui-monospace,Menlo,monospace
 const txEnd = (x, y, z, str, size, col, sg, anchor = 'middle', wt = 800) => `<text transform="${txM(P(x, y, z), Dv(sg, 0, 0), Dv(0, 0, -1))}" font-size="${size}" fill="${col}" text-anchor="${anchor}" font-family="ui-monospace,Menlo,monospace" font-weight="${wt}" letter-spacing=".03em">${str}</text>`;
 
 /* ---------- la voie ---------- */
-const GRAVEL = (() => { let sd = 11; const r = () => (sd = (sd*16807) % 2147483647) / 2147483647, o = [];
-  for (let i = 0; i < 700; i++) o.push([TX - 14.5 + 29*r(), SLABY + 1 + (D - SLABY - 2)*r(), r()]); return o; })();
 function trackBed(){
   const pr = [[TX - 15, 0], [TX + 15, 0], [TX + 12.8, BAL], [TX - 12.8, BAL]], A = on(PY(SLABY), pr), B = on(PY(D), pr);
   let s = loft(A, B, n => tone(n, BALLAST));
   if (facing([0,1,0])) s += shape(B, tone([0,1,0], BALLAST), .8);
-  let g = '';
-  for (const [x, y, k] of GRAVEL){ if (Math.abs(x - TX) >= 12.8) continue; const q = .35 + .3*k; g += pd([[x - q, y, BAL + .02], [x + q, y, BAL + .02], [x, y + q, BAL + .02]]); }
-  s += fill(g, BALLAST.d, 'opacity=".55"') + hullInk([...A, ...B], 1.6);
+  const top = [[TX - 12.8, SLABY, BAL + .02], [TX + 12.8, SLABY, BAL + .02], [TX + 12.8, D, BAL + .02], [TX - 12.8, D, BAL + .02]];
+  s += `<defs><pattern id="tgGrav" patternUnits="userSpaceOnUse" width="5.3" height="4.1"><path d="M.6 .9l.9-.5.5.8zM3.1 2.2l.8-.4.4.9zM1.4 3.3l.7-.2.2.6zM4.4 .6l.5.1-.3.5z" fill="${BALLAST.d}" opacity=".6"/></pattern></defs>`
+    + fill(pd(top), 'url(#tgGrav)') + hullInk([...A, ...B], 1.6);
   const sl = [];
   for (let y = SLABY + 3; y < D - 1; y += 6){
     let t = box(TX - 12.5, y - 1.3, BAL, TX + 12.5, y + 1.3, TIE, SLEEPER, tone, .6);                       // traverses béton
@@ -347,7 +354,7 @@ function trainParts(st, m, K, k){
       if (uEnd > 80) s += ink(pd([[x, TY(70), RT + 17], [x, TY(77), RT + 17], [x, TY(77), RT + 36], [x, TY(70), RT + 36]]), .7);
       if (uEnd > 200){ let gr = ''; for (const [a, b] of [[92, 124], [136, 168], [176, 206]]) for (let z = RT + 29; z <= RT + 36; z += 1.4) gr += pd([[x, TY(a), z], [x, TY(b), z]], false);
         s += `<path d="${gr}" fill="none" stroke="${BODY.d}" ${mw(.3)}/>`; } }
-    { const ia = 3*7 + 3, ib = 3*7 + 1 + 6, top = (u, k) => { const pts = secPts(u), c = [TX, TY(u), RT + (secAt(u)[2] + secAt(u)[3])/2]; return pts.slice(7 + 3, 21 + 4).map(p => lerp3(c, p, 1.012)); };
+    { const top = u => { const pts = secPts(u), c = [TX, TY(u), RT + (secAt(u)[2] + secAt(u)[3])/2]; return pts.slice(10, 18).map(p => lerp3(c, p, 1.012)); };
       const A = top(20), B = top(37.5), poly = [...B, ...A.reverse()], n = norm(cross(sub(B[0], A[A.length - 1]), sub(B[B.length - 1], B[0])));
       if (vis([0, .5, .9])) s += shape(poly, GLASSD, .8)
         + clipTo(poly, lathe(TX - 3.6, TY(45), [[RT + 22, 2], [RT + 28, 2.2], [RT + 29.5, 1.2], [RT + 30, 1.3], [RT + 32, 1.2], [RT + 32.4, .3]], NAVY, .7, 12))   // the driver, seen through it
@@ -605,13 +612,12 @@ function objects(st, m, k){
   for (const p of K.parts) if (p.box[1][1] > D - 60) p.svg = `<g mask="url(#tgFade)">${p.svg}</g>`;
   return lcSort(K.parts);
 }
-function scene(st, m){
+// what never moves (the fade mask, the fixed shadows, ballast and sleepers) is drawn only when the view turns
+function groundSvg(){ return fadeDefs() + staticShadows() + `<g mask="url(#tgFade)">${trackBed()}</g>`; }
+function scene(st, m, withGround = true){
   SS = st.s; const k = ease(st.xr || 0);
-  let s = fadeDefs() + `<defs><filter id="tgGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="${f(1.2*INK_K)}"/></filter></defs>`;
-  let w = staticShadows() + `<g mask="url(#tgFade)">${trackBed() + trainShadow(st) + railsSvg()}</g>`;
-  w += objects(st, m, k);
-  s += w;
-  s += lcCallouts(k > .6 ? insideLabels(st) : surfaceLabels(st));
+  let s = (withGround ? groundSvg() : '') + `<g mask="url(#tgFade)">${trainShadow(st) + railsSvg()}</g>` + objects(st, m, k);
+  if (!document.documentElement.classList.contains('nolabels')) s += lcCallouts(k > .6 ? insideLabels(st) : surfaceLabels(st));
   return s;
 }
 function staticShadows(){
@@ -668,7 +674,7 @@ function tick(st, dt){
   // boarding: people come out from under the slab, the count rises, the clock runs to two minutes before departure
   if (st.boarding){ st.spawnT -= dt;
     if (st.spawnT <= 0 && st.spawned < 9){ st.spawnT = .75; st.spawned++;
-      const p = newPerson(st, PE + 14 + (st.spawned*7) % 30, SLABY + 1, { board: true }); p.path = [[p.x, SLABY + 14 + (st.spawned % 3)*3], ...boardPath(p)]; }
+      const p = newPerson(st, PE + 14 + (st.spawned*7) % 30, SLABY + 3, { board: true }); p.path = [[p.x, SLABY + 14 + (st.spawned % 3)*3], ...boardPath(p)]; }
     if (st.doors > .9){ st.boarded = Math.min(CAP, st.boarded + dt*CAP/9); st.minute = Math.min(depMin(st) - 2.5, st.minute + dt*1.7); } }
   stepPeople(st, dt);
   // departure: the agent raises the bat, the signal clears, the driver pushes the lever; current, speed, distance
@@ -754,7 +760,34 @@ ui = mountFigure({
 // the people already waiting on the platform, looking at the board
 for (const [x, y, a] of [[96, 104, -Math.PI/2], [101, 110, -Math.PI*.6], [90, 140, Math.PI*.9]]) newPerson(ui.st, x, y, { a });
 ui.render();
+/* ---------- fluidité ----------
+   The drawing is two layers: the ground, rebuilt only when the view turns, and the rest, rebuilt every frame. While
+   something moves, the paper grain (a noise the browser recomputes over the whole figure each frame) is replaced by a
+   flat tone of the same brightness; the wobbly lines stay the same, and the grain comes back when it stops. */
+(() => {
+  const art = document.getElementById('art'); let gk = '', G = null, LV = null;
+  ui.render = () => { const st = ui.st, m = PALS[st.pal]; _clipN = 0; document.documentElement.style.setProperty('--accent', m.l);
+    if (!G || !G.isConnected){ art.innerHTML = '<g></g><g></g>'; G = art.firstChild; LV = art.lastChild; gk = ''; }
+    const key = YAW.toFixed(3) + '/' + PITCH.toFixed(3) + '/' + INK_K;
+    if (key !== gk){ G.innerHTML = inkScale(groundSvg()); gk = key; }
+    LV.innerHTML = inkScale(scene(st, m, false));
+    if (ui.drawStats) ui.drawStats(); };
+  let busy = 0, offT = 0, saved = null;
+  const fast = on => { const fl = document.getElementById('hand'); if (!fl) return;
+    if (on && !saved){ const n1 = fl.querySelector('[result="n1"]'), gr = fl.querySelector('[result="grain"]'); if (!n1 || !gr) return;
+      const fd = document.createElementNS('http://www.w3.org/2000/svg', 'feFlood'); fd.setAttribute('flood-color', 'rgb(251,251,251)'); fd.setAttribute('result', 'grain');
+      saved = [n1, gr, fd]; n1.replaceWith(fd); gr.remove(); }
+    else if (!on && saved){ const [n1, gr, fd] = saved; fd.replaceWith(n1); n1.after(gr); saved = null; } };
+  const anim = ui.animate;
+  ui.animate = step => { busy++; clearTimeout(offT); fast(true); let done = false;
+    anim(dt => { const r = step(dt); if (r === false && !done){ done = true; if (--busy <= 0){ busy = 0; offT = setTimeout(() => fast(false), 250); } } return r; }); };
+  // turning the figure by hand is a motion too
+  const fig = document.getElementById('fig');
+  fig.addEventListener('pointerdown', () => { clearTimeout(offT); fast(true); });
+  addEventListener('pointerup', () => { if (!busy) offT = setTimeout(() => fast(false), 250); });
+})();
 xrMount(() => ui, () => '');
+document.getElementById('lblb').addEventListener('click', () => ui.render());          // labels are drawn only when shown
 
 // tests: ?sim=Lever@0.3,Afficher@2&at=9 presses the buttons at those times (s) in a fast simulation, then draws once;
 // ?bench=1 times a full redraw (<html data-bench="ms">); ?shot=1 hides the page around the drawing
