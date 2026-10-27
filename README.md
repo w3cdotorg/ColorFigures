@@ -1,15 +1,16 @@
 # ColorFigures
 
-Des objets du quotidien dessinés comme à l'encre, en perspective isométrique, que l'on peut faire pivoter, explorer
+Des objets du quotidien et des phénomènes naturels dessinés comme à l'encre, en perspective isométrique, que l'on peut faire pivoter, explorer
 de l'intérieur et voir en fonctionnement. Chaque figure est une page web autonome, réalisée par Claude à l'aide de
 [Colorfigures](https://april-zhu.com/colorfigures), un module de compétences (*skill*) conçu par April Zhu.
 
 **Voir la galerie : https://w3cdotorg.github.io/ColorFigures/**
 
-| Fig. | Figure | Étapes et mécanisme |
-| --- | --- | --- |
-| 01 | [Locomotive à vapeur](https://w3cdotorg.github.io/ColorFigures/figures/locomotive-a-vapeur.html) | Faire le plein d'eau au château d'eau, charger le bois, nourrir le feu, siffler et partir, revenir. En transparence : foyer, tubes à fumée, régulateur, pistons, injecteur, caisse à eau du tender, réservoir et flotteur du château d'eau. |
-| 02 | [TGV au départ de Montparnasse](https://w3cdotorg.github.io/ColorFigures/figures/tgv-montparnasse.html) | Lever le pantographe, afficher la voie (embarquement), fermer les portes, démarrer, faire venir la rame suivante. En transparence : trajet du courant de la sous-station à la caténaire, au pantographe et aux moteurs, retour par les rails ; filtre, transformateur, onduleurs, moteurs de traction, cabine ; salles basse et haute de la voiture Duplex. |
+| Fig. | Figure | Catégories | Étapes et mécanisme |
+| --- | --- | --- | --- |
+| 01 | [Locomotive à vapeur](https://w3cdotorg.github.io/ColorFigures/figures/locomotive-a-vapeur.html) | Train, Transport, Vapeur | Faire le plein d'eau au château d'eau, charger le bois, nourrir le feu, siffler et partir, revenir. En transparence : foyer, tubes à fumée, régulateur, pistons, injecteur, caisse à eau du tender, réservoir et flotteur du château d'eau. |
+| 02 | [TGV au départ de Montparnasse](https://w3cdotorg.github.io/ColorFigures/figures/tgv-montparnasse.html) | Train, Transport, Électricité | Lever le pantographe, afficher la voie (embarquement), fermer les portes, démarrer, faire venir la rame suivante. En transparence : trajet du courant de la sous-station à la caténaire, au pantographe et aux moteurs, retour par les rails ; filtre, transformateur, onduleurs, moteurs de traction, cabine ; salles basse et haute de la voiture Duplex. |
+| 03 | [Volcan en éruption](https://w3cdotorg.github.io/ColorFigures/figures/volcan-en-eruption.html) | Phénomène naturel, Volcan, Géologie | Remontée du magma (pression, séismes, gonflement du sol mesuré par GPS, fumerolles), éruption explosive (panache, bombes, fontaine de lave), coulée de lave, retour au calme. En transparence : dyke nourricier, chambre magmatique, sill, cheminée, colonne de magma et bulles de gaz, lac de lave, foyers des séismes. |
 
 ## Organisation
 
@@ -27,7 +28,9 @@ src/<nom>/figure.html la source de chaque figure (géométrie, mécanisme, bouto
    `python3 ~/.claude/skills/colorfigures/scripts/build.py src/<nom>/figure.html figures/<nom>.html`
    (la source charge `core.js` : copier `~/.claude/skills/colorfigures/assets/core.js` à côté pour l'ouvrir telle quelle).
 3. Ajouter deux vignettes 4:3 (vue normale et vue en transparence) dans `thumbs/`.
-4. Ajouter une carte dans la section `#figures` de `index.html`, et une ligne au tableau ci-dessus.
+4. Ajouter une carte dans la section `#figures` de `index.html`, avec ses catégories (`<span class="tg">…</span>` dans
+   `.tags`) : les filtres de la galerie se construisent tout seuls à partir de ces étiquettes (`?tag=Volcan` présélectionne
+   une catégorie). Ajouter aussi une ligne au tableau ci-dessus.
 
 La locomotive accepte quelques paramètres d'URL pour les captures et les tests :
 `?yaw=200&pitch=40` (angle de vue), `?xr=1&labels=1` (transparence et étiquettes), `?shot=1` (le dessin seul),

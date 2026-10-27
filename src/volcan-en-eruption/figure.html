@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Volcan en éruption</title></head><body>
+<script src="core.js"></script>
+<script>
+/* Un stratovolcan (du type de l'Etna) en bloc-diagramme : un morceau de croûte terrestre, ses strates sur les côtés,
+   le cône du volcan dessus. Échelle verticale exagérée, comme dans les schémas de géologie.
+   Comment ça marche vraiment (où sont le magma, les gaz et la pression après chaque étape) :
+   1. Remontée du magma : du magma, né de la fusion partielle du manteau, monte par des dykes et s'accumule dans la
+      chambre magmatique, à quelques kilomètres de profondeur. La pression monte, la roche autour se fracture :
+      essaims de séismes (enregistrés par la station sismique) ; le sol gonfle de quelques centimètres (station GPS) ;
+      des gaz (vapeur d'eau, CO2, SO2) s'échappent par les fumerolles du cratère.
+   2. Éruption explosive : la surpression dépasse la résistance de la roche ; le magma monte dans la cheminée ; en
+      se décomprimant, ses gaz forment des bulles qui grossissent et le fragmentent : un jet de gaz et de cendres
+      sort du cratère, s'élève en colonne (panache éruptif) puis s'étale avec le vent ; des bombes volcaniques sont
+      projetées en cloche et retombent sur les flancs ; une fontaine de lave jaillit du lac de lave du cratère.
+   3. Coulée de lave : le magma dégazé déborde du cratère et descend le flanc dans la pente ; sa surface refroidit
+      en croûte sombre, son front avance lentement, incandescent.
+   4. Retour au calme : la chambre se vide, la pression retombe, le sol dégonfle, la colonne de magma redescend, la
+      coulée refroidit et se fige, le panache se disperse avec le vent.
+   Pièces (chacune tenue par une autre) :
+   BLOC        socle, grès, argiles, anciennes coulées, sol (strates des faces) . prairie du dessus
+   VOLCAN      cône (pentes boisées en bas, cendres et scories en haut) . ravines . cratère : parois, fond, lac de lave .
+               coulée (croûte, chenal incandescent, front) . fumerolles . panache . bombes . fontaine de lave
+   AUTOUR      station sismique (abri, mât d'antenne, sismographe derrière la vitre) . station GPS (pilier, antenne,
+               panneau solaire) . village (maisons) . conifères
+   DEDANS      dyke nourricier depuis le manteau . chambre magmatique . sill . cheminée . colonne de magma . bulles
+               de gaz . foyers des séismes */
+
+/* ---------- géométrie (x = profondeur, y = largeur, z = haut ; schéma, échelle verticale exagérée) ---------- */
+const W = 130, D = 130, GZ = 40, CX = 65, CY = 65, H = 178;
+const CP = [[GZ, 50], [46, 41], [53, 33], [61, 26], [70, 20.5], [80, 16], [90, 12.6], [100, 10.2], [110, 8.4]];   // profil du cône (z, rayon)
+const RIM = 110, FLOOR = 102.5, FLR = 3.6, NR = 40;
+const CHAMBER = [19, 7.5, 22], CON_R = 2.4, SILL = [CX - 17, CY + 3, 33.6];
+const AF = 45*Math.PI/180;                                            // la coulée descend vers l'observateur
+const WIND = [-1, -.55];
+const HUT = [3, 98, 12, 112], GPS = [122, 34], HOUSES = [[119, 118, 0], [125, 123, 1.2], [118.5, 126, .5]];
+const TREES = [[6, 8], [11, 18], [5, 32], [123, 10], [127, 22], [124, 56], [8, 70], [4, 84], [30, 124], [45, 127], [70, 125], [90, 123]];
+const STRATA = [[0, '#a1928c', 'SOCLE'], [11, '#cdb48e'], [18, '#ad927a'], [25, '#8f827a'], [31, '#6e625c'], [36, '#7d6449']];
+const MAXP = 22, MAXINF = 14;
+
+const VEG = { l:'#a3c77f', m:'#83a865', d:'#55723f' }, ROCK = { l:'#ab9c8f', m:'#8a7b6f', d:'#5a4d43' }, SUMMIT = { l:'#968c86', m:'#766d68', d:'#4b4440' };
+const CRATER = { l:'#8a7f78', m:'#6b615b', d:'#45403c' }, GRASS = { l:'#a9cf87', m:'#8ab36b', d:'#5d7e45' };
+const LEAF = { l:'#6fae63', m:'#548f4b', d:'#33602f' }, BARK = { l:'#9c6c43', m:'#7b5230', d:'#4d331d' };
+const WALL = { l:'#f1ece2', m:'#d8d1c3', d:'#a49b89' }, STEEL = { l:'#e3e7e9', m:'#b3babe', d:'#7d868b' }, CONC = { l:'#e2ddd2', m:'#c6c0b2', d:'#99927f' };
+const CRUST = '#3b302b', HOT = '#ff6a1f', BRIGHT = '#ffd23a', MAGMA_D = '#7a2a1a';
+
+/* ---------- petits outils ---------- */
+let INFL = 0;
+const lerp3 = (a, b, t) => a.map((v, i) => v + (b[i] - v)*t);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const mw = w => `style="stroke-width:${f(w)}"`;
+const strk = (pts, col, w, extra = '') => `<path d="${pd(pts, false)}" fill="none" stroke="${col}" ${mw(w)} stroke-linecap="round" stroke-linejoin="round" ${extra}/>`;
+const mm = (A, B, t) => ({ l: mix(A.l, B.l, t), m: mix(A.m, B.m, t), d: mix(A.d, B.d, t) });
+const fr1 = v => v.toFixed(1).replace('.', ',');
+const frInt = v => Math.round(v).toLocaleString('fr-FR');
+const rbox = (a, b, r) => { const d = norm(sub(b, a)), e = d.map(v => r*Math.sqrt(Math.max(0, 1 - v*v)));
+  return [[0,1,2].map(i => Math.min(a[i], b[i]) - e[i]), [0,1,2].map(i => Math.max(a[i], b[i]) + e[i])]; };
+function kit(){ const parts = []; const put = (b, svg) => { if (svg) parts.push({ box: b, svg }); };
+  return { parts, put, bx: (x0, y0, z0, x1, y1, z1, M, sh = tone, w = .8) => put([[x0, y0, z0], [x1, y1, z1]], box(x0, y0, z0, x1, y1, z1, M, sh, w)),
+    rd: (a, b, r, M, sh = tone, w = .8, r1 = r, n = 8) => put(rbox(a, b, Math.max(r, r1)), rod(a, b, r, M, sh, w, r1, n)) }; }
+function lathe(x, y, prof, M, w = 1.1, n = 14, sh = tone){
+  const R = prof.map(([z, r]) => on(PZ(z), ellUV(x, y, Math.max(r, .05), Math.max(r, .05), n))); let s = '';
+  for (let i = 0; i < R.length - 1; i++) s += loft(R[i], R[i + 1], nr => sh(nr, M));
+  s += fill(pd(R[R.length - 1]), sh([0,0,1], M));
+  return s + hullInk(R.flat(), w);
+}
+// the inflated height of a point of the cone (the ground swells a little while the chamber fills)
+const zi = z => GZ + (z - GZ)*(1 + .0013*INFL);
+// the cone's surface height at a distance r from the axis (crater inside the rim)
+function surf0(r){
+  if (r >= CP[0][1]) return GZ;
+  if (r <= CP[CP.length - 1][1]) return FLOOR + (RIM - FLOOR)*clamp((r - FLR)/(CP[CP.length - 1][1] - FLR), 0, 1);
+  for (let i = 0; i < CP.length - 1; i++) if (r <= CP[i][1] && r >= CP[i + 1][1]){ const t = (CP[i][1] - r)/(CP[i][1] - CP[i + 1][1]); return CP[i][0] + t*(CP[i + 1][0] - CP[i][0]); }
+  return GZ;
+}
+const surf = r => zi(surf0(r));
+const ringAt = (z, r, n = NR) => on(PZ(zi(z)), ellUV(CX, CY, r, r, n));
+const bandOf = r => { if (r > CP[0][1]) return -1; for (let i = 0; i < CP.length - 1; i++) if (r <= CP[i][1] && r > CP[i + 1][1]) return i; return CP.length - 2; };
+const coneN = (a, i) => { const dz = zi(CP[i + 1][0]) - zi(CP[i][0]), dr = CP[i][1] - CP[i + 1][1]; return norm([Math.cos(a)*dz, Math.sin(a)*dz, dr]); };
+// is this point hidden behind the cone? (march toward the viewer; the camera always looks down, so once the ray is
+// above the summit nothing can hide it)
+function hidden(p){
+  for (let t = 1.5; t < 170; t += 3){ const q = [p[0] + CAM_V[0]*t, p[1] + CAM_V[1]*t, p[2] + CAM_V[2]*t];
+    if (q[2] > zi(RIM) + 1) return false; const r = Math.hypot(q[0] - CX, q[1] - CY);
+    if (r < CP[0][1] && q[2] < surf(r) - .4) return true; }
+  return false;
+}
+
+/* ---------- le bloc de terrain et ses strates ---------- */
+const layerTop = (k, u) => k + 1 >= STRATA.length ? GZ : STRATA[k + 1][0] + .9*Math.sin(u/11 + k*1.7) + .5*Math.sin(u/4.3 + k);
+function blockSvg(st){
+  let s = '';
+  const faces = [[[1,0,0], u => [W, u, 0], D], [[-1,0,0], u => [0, u, 0], D], [[0,1,0], u => [u, D, 0], W], [[0,-1,0], u => [u, 0, 0], W]];
+  for (const [n, at, len] of faces){ if (!facing(n)) continue;
+    const us = Array.from({length: 27}, (_, i) => len*i/26), pt = (u, z) => { const p = at(u); return [p[0], p[1], z]; };
+    for (let k = 0; k < STRATA.length; k++){
+      const bot = us.map(u => pt(u, k === 0 ? 0 : layerTop(k - 1, u))), top = us.map(u => pt(u, layerTop(k, u))).reverse();
+      s += fill(pd([...bot, ...top]), tone(n, matOf(STRATA[k][1]))); }
+    let ln = ''; for (let k = 0; k < STRATA.length - 1; k++) ln += pd(us.map(u => pt(u, layerTop(k, u))), false);
+    s += `<path d="${ln}" fill="none" stroke="${INK}" ${mw(.3)} opacity=".55"/>` + ink(pd([pt(0, 0), pt(len, 0), pt(len, GZ), pt(0, GZ)]), 1.4); }
+  const top = [[0, 0, GZ], [W, 0, GZ], [W, D, GZ], [0, D, GZ]];
+  s += fill(pd(top), mix(GRASS.l, '#8f8984', .55*st.ash)) + ink(pd(top), 1.2);
+  return s + hullInk([...top, [0, 0, 0], [W, 0, 0], [W, D, 0], [0, D, 0]], 2.8);
+}
+function groundSvg(st){
+  const k = ease(st.xr || 0), top = [[0, 0, GZ], [W, 0, GZ], [W, D, GZ], [0, D, GZ]];
+  const sh = castShadow([[0, 0, 0], [W, 0, 0], [W, D, 0], [0, D, 0], [0, 0, GZ], [W, 0, GZ], [W, D, GZ], [0, D, GZ]]);
+  const csh = castShadow([...ringAt(GZ, CP[0][1], 24), ...ringAt(70, 20.5, 16), ...ringAt(RIM, 8.4, 16)], GZ, top);
+  const blk = blockSvg(st) + (k > 0 ? '' : csh);                       // in see-through the cone's shadow would read as a dark disc
+  // see-through: the block's own footprint covers its shadow, so the ghost shows paper behind it, not blue
+  return sh + (k > 0 ? fill(pd([[0, 0, 0], [W, 0, 0], [W, D, 0], [0, D, 0]]), '#f2efe7', `opacity="${f(.85*k)}"`) + `<g opacity="${f(1 - .62*k)}">${blk}</g>` : blk);
+}
+
+/* ---------- le cône, sa coulée, son cratère ---------- */
+const FLOW = Array.from({length: 45}, (_, j) => { const r = 8.7 + (58 - 8.7)*j/44;
+  return { r, a: AF + .13*Math.sin(r/7) + .05*Math.sin(r/2.3), w: 2.2 + 7.5*Math.pow(j/44, .8) }; });
+const flowPt = (j, side = 0, lift = .3) => { const q = FLOW[j], c = Math.cos(q.a), s = Math.sin(q.a), x = CX + q.r*c, y = CY + q.r*s;
+  return [x - s*side*q.w/2, y + c*side*q.w/2, surf(Math.hypot(x - s*side*q.w/2 - CX, y + c*side*q.w/2 - CY)) + lift]; };
+function flowSegs(st, band){
+  const n = st.flow*(FLOW.length - 1); if (n < .05) return '';
+  let s = '', ln = '';
+  for (let j = 0; j < Math.ceil(n); j++){
+    if (bandOf(FLOW[j].r) !== band) continue;                         // drawn with the band of its upper end, so the bands below never cover it
+    const t = Math.min(1, n - j), J = k => k === j + 1 && t < 1 ? null : k;
+    const L1 = flowPt(j, 1), R1 = flowPt(j, -1), L2 = t < 1 ? lerp3(L1, flowPt(j + 1, 1), t) : flowPt(j + 1, 1), R2 = t < 1 ? lerp3(R1, flowPt(j + 1, -1), t) : flowPt(j + 1, -1);
+    const nr = band < 0 ? [0, 0, 1] : coneN(FLOW[j].a, band); if (!vis(nr)) continue;
+    const h = st.flowHot*Math.max(.32, 1 - (n - j)/12, 1 - j/9);
+    s += fill(pd([L1, L2, R2, R1]), mix(CRUST, HOT, h));
+    s += strk([lerp3(L1, R1, .5), lerp3(L2, R2, .5)], BRIGHT, .5 + .5*FLOW[j].w/7, `opacity="${f(clamp(h*1.2 - .2, 0, 1))}"`);
+    ln += pd([L1, L2], false) + pd([R1, R2], false);
+    if (j === Math.ceil(n) - 1){ const fr = [], c = lerp3(L2, R2, .5), q = FLOW[Math.min(FLOW.length - 1, j + 1)], o = [Math.cos(q.a), Math.sin(q.a), -.35];
+      for (let i = 0; i <= 8; i++){ const th = Math.PI*i/8; fr.push([c[0] + (L2[0] - c[0])*Math.cos(th) + o[0]*q.w*.45*Math.sin(th), c[1] + (L2[1] - c[1])*Math.cos(th) + o[1]*q.w*.45*Math.sin(th), c[2] + o[2]*q.w*.45*Math.sin(th) + .05]); }
+      s += shape(fr, mix(HOT, BRIGHT, st.flowHot*.6), .6); } }
+  return s + (ln ? `<path d="${ln}" fill="none" stroke="${INK}" ${mw(.45)}/>` : '');
+}
+function bandMat(st, i){
+  const t = ((CP[i][0] + CP[i + 1][0])/2 - GZ)/(RIM - GZ), M = i === 0 ? mm(GRASS, VEG, .5) : t < .35 ? mm(VEG, ROCK, t/.35) : mm(ROCK, SUMMIT, (t - .35)/.65);
+  const a = st.ash*Math.max(.55*(1 - t*2.5), clamp(t*1.4, 0, 1)*.7);    // ash greys the foot like the grass, darkens the summit
+  return a > 0 ? mm(M, t < .3 ? { l:'#8f8984', m:'#77716c', d:'#4c4743' } : { l:'#76716d', m:'#5f5a56', d:'#3d3936' }, a) : M;
+}
+function coneSvg(st){
+  const rings = CP.map(([z, r]) => ringAt(z, r));
+  // the outline: every band from the steep part up, filled with ink and stroked thick underneath; the bands' own fills
+  // then cover the inside, so only the true (concave) silhouette stays. The gentle foot has none: it blends into the grass.
+  let s = '';
+  for (let i = 2; i < CP.length - 1; i++){ const h = hull([...rings[i], ...rings[i + 1]].map(p => P(...p)));
+    s += `<path d="${sp(h)}" fill="${INK}" stroke="${INK}" stroke-width="5.2" stroke-linejoin="round"/>`; }
+  s += flowSegs(st, -1);                                              // the flow's end, out on the flat ground
+  for (let i = 0; i < CP.length - 1; i++){
+    const M = bandMat(st, i); s += loft(rings[i], rings[i + 1], n => tone(n, M));
+    if (i >= 2){ let g = '';                                            // ravines on the upper slopes
+      for (let k = 0; k < 28; k++){ const a = k*2*Math.PI/28 + .13*Math.sin(k*2.1); if (!vis(coneN(a, i))) continue;
+        const p = (z, r) => [CX + r*Math.cos(a), CY + r*Math.sin(a), zi(z) + .05];
+        g += pd([p(CP[i][0], CP[i][1]), p(CP[i + 1][0], CP[i + 1][1])], false); }
+      s += `<path d="${g}" fill="none" stroke="${M.d}" ${mw(.32)} opacity=".55"/>`; }
+    s += flowSegs(st, i); }
+  // the crater: its inside walls and its floor, seen through the rim
+  const rim = rings[rings.length - 1], fl = ringAt(FLOOR, FLR, NR);
+  const lake = st.lake, lc = mix('#3b2a24', HOT, lake);
+  let inner = loft(fl, rim, n => toneI(n, CRATER), true) + fill(pd(fl), lc);
+  if (lake > .05) inner += fill(pd(ringAt(FLOOR + .05, FLR*.7, 20)), BRIGHT, `opacity="${f(.6*lake)}"`);
+  s += clipTo(rim, inner) + ink(pd(rim), 1.2);
+  return act('cone', s);
+}
+
+/* ---------- autour : station sismique, GPS, village, arbres ---------- */
+function propsParts(st, m){
+  const K = kit(), { put, bx, rd } = K;
+  // seismic station: a hut, its antenna, and the drum recorder seen through the window
+  { const [x0, y0, x1, y1] = HUT, z = GZ;
+    let s = box(x0, y0, z, x1, y1, z + 7, WALL, tone, 1.2) + box(x0 - .6, y0 - .6, z + 7, x1 + .6, y1 + .6, z + 8, m, tone, 1);
+    if (facing([1,0,0])){ const x = x1 + .04, win = [[x, y0 + 3, z + 2.4], [x, y1 - 3, z + 2.4], [x, y1 - 3, z + 5.8], [x, y0 + 3, z + 5.8]];
+      s += shape(win, '#fbf8ee', .8);
+      const pts = st.seis.map((v, i) => [x + .02, y0 + 3.4 + (y1 - y0 - 6.8)*i/(st.seis.length - 1), z + 4.1 + clamp(v, -1.4, 1.4)]);
+      s += strk(pts, '#c0392b', .18) + ink(pd([[x, y0 + 3, z + 2.4], [x, y1 - 3, z + 2.4]], false), .4);
+      s += shape([[x, y0 + 1, z], [x, y0 + 2.6, z], [x, y0 + 2.6, z + 5], [x, y0 + 1, z + 5]], m.m, .6); }
+    put([[x0 - .6, y0 - .6, z], [x1 + .6, y1 + .6, z + 8]], s);
+    rd([x0 + 2, y1 - 2, z + 8], [x0 + 2, y1 - 2, z + 19], .25, STEEL, tone, .6);
+    put([[x0, y1 - 4, z + 17], [x0 + 4, y1, z + 20]], lathe(x0 + 2, y1 - 2, [[z + 17.4, .2], [z + 18.2, 1.6], [z + 18.4, 1.7]], STEEL, .6, 12)); }
+  // GPS station: a concrete pillar, the antenna, a solar panel; it moves out a little as the ground swells
+  { const dir = norm([GPS[0] - CX, GPS[1] - CY, 0]), x = GPS[0] + dir[0]*INFL*.12, y = GPS[1] + dir[1]*INFL*.12, z = GZ;
+    let s = box(x - .8, y - .8, z, x + .8, y + .8, z + 5, CONC, tone, .8) + lathe(x, y, [[z + 5, .9], [z + 5.6, 1.4], [z + 6.2, 1.2], [z + 6.6, .3]], WALL, .7, 12);
+    s += shape([[x - 3.6, y + 1.4, z + 1.5], [x - 3.6, y + 4.6, z + 1.5], [x - 2.2, y + 4.6, z + 3.6], [x - 2.2, y + 1.4, z + 3.6]], '#2b3a5c', .6)
+      + rod([x - 2.9, y + 3, z], [x - 2.9, y + 3, z + 2.4], .15, STEEL, tone, .4);
+    put([[x - 3.7, y - 1.4, z], [x + 1.4, y + 4.7, z + 6.6]], s); }
+  // village: three houses with gabled roofs
+  for (const [x, y, a] of HOUSES){ const hw = 2.2, hl = 3, z = GZ, c = Math.cos(a), sn = Math.sin(a);
+    const q = (l, k, zz) => [x + c*l - sn*k, y + sn*l + c*k, zz];
+    const base = [q(-hl, -hw, z), q(hl, -hw, z), q(hl, hw, z), q(-hl, hw, z)], top = base.map(p => [p[0], p[1], z + 3.4]);
+    let s = '';
+    for (let i = 0; i < 4; i++){ const j = (i + 1) % 4, n = norm([(base[i][0] + base[j][0])/2 - x, (base[i][1] + base[j][1])/2 - y, 0]);
+      if (vis(n)) s += shape([base[i], base[j], top[j], top[i]], tone(n, WALL), .6); }
+    const r1 = q(-hl - .4, 0, z + 5.6), r2 = q(hl + .4, 0, z + 5.6), e = [q(-hl - .4, -hw - .5, z + 3.2), q(hl + .4, -hw - .5, z + 3.2), q(hl + .4, hw + .5, z + 3.2), q(-hl - .4, hw + .5, z + 3.2)];
+    for (const [n, poly] of [[norm([-sn, c, .9].map((v, i) => i < 2 ? -v : v)), [e[0], e[1], r2, r1]], [norm([-sn, c, .9]), [e[3], e[2], r2, r1]]])
+      if (vis(n)) s += shape(poly, tone(n, matOf('#b5533c')), .7);
+    for (const [k, ends] of [[-1, [e[0], e[3], r1]], [1, [e[1], e[2], r2]]]){ const n = [c*k, sn*k, 0]; if (vis(n)) s += shape([ends[0], ends[1], ends[2]], tone(n, WALL), .5); }
+    put(bboxOf([...base, ...e, r1, r2]), s + hullInk([...base, ...e, r1, r2], 1)); }
+  for (const [x, y] of TREES){ rd([x, y, GZ], [x, y, GZ + 2.4], .35, BARK, tone, .5, .3, 6);
+    put([[x - 2.6, y - 2.6, GZ + 1.6], [x + 2.6, y + 2.6, GZ + 10]], lathe(x, y, [[GZ + 1.6, 2.6], [GZ + 4.6, 1.8], [GZ + 4.7, 2.2], [GZ + 7.6, 1.1], [GZ + 7.7, 1.4], [GZ + 10, .1]], LEAF, .8, 10)); }
+  return K.parts;
+}
+const bboxOf = pts => [[0,1,2].map(i => Math.min(...pts.map(p => p[i]))), [0,1,2].map(i => Math.max(...pts.map(p => p[i])))];
+
+/* ---------- dedans : dyke, chambre, sill, cheminée, magma ---------- */
+function insideParts(st){
+  const K = kit(), { put, bx } = K, hot = mm(matOf(MAGMA_D), matOf('#ff6a2a'), clamp(st.charge, 0, 1)), live = matOf('#ff7a2a');
+  // the feeder dyke, a sheet of magma rising from the mantle into the chamber
+  put([[CX + 2, CY - 6, 0], [CX + 4.5, CY + 6, 11.5]], box(CX + 2, CY - 6, 0, CX + 4.5, CY + 6, 11.5, st.recharging ? live : hot, tone, .8));
+  // the chamber: a flattened lens of molten rock
+  { const [zc, hz, r] = CHAMBER, prof = [];
+    for (let k = 0; k <= 10; k++){ const a = Math.PI*k/10; prof.push([zc - hz*Math.cos(a), r*Math.sin(a)]); }
+    put([[CX - r, CY - r, zc - hz], [CX + r, CY + r, zc + hz]], lathe(CX, CY, prof, hot, 1.4, 24)); }
+  // a sill: magma that spread sideways between two layers, fed from the conduit
+  put([[SILL[0] - 7, SILL[1] - 7, SILL[2] - .8], [SILL[0] + 7, SILL[1] + 7, SILL[2] + .8]], lathe(SILL[0], SILL[1], [[SILL[2] - .8, 4], [SILL[2] - .5, 6.6], [SILL[2] + .4, 7], [SILL[2] + .8, 5]], hot, .8, 18));
+  K.put([[SILL[0] + 7, CY - 1, SILL[2] - .8], [CX - CON_R, CY + 4, SILL[2] + .8]], rod([SILL[0] + 6.5, SILL[1] - .5, SILL[2]], [CX - CON_R, CY, SILL[2]], .7, hot, tone, .6, .7, 8));
+  // the conduit up to the crater, the magma column inside it and its gas bubbles
+  { const z0 = CHAMBER[0] + CHAMBER[1], zm = z0 + (zi(FLOOR) - z0)*st.rise;
+    let s = '';
+    if (st.rise > .01){ s += rod([CX, CY, z0], [CX, CY, zm], CON_R - .4, live, tone, .6, CON_R - .4, 14);
+      for (let i = 0; i < 9; i++){ const z = z0 + 1 + ((st.clock*16*(1 + st.erupting) + i*9.3) % Math.max(1, zm - z0 - 2)), [X, Y] = P(CX + 1.1*Math.sin(i*2.3), CY + 1.1*Math.cos(i*2.3), z);
+        s += `<circle cx="${f(X)}" cy="${f(Y)}" r="${f(.35 + .25*(z - z0)/(zm - z0 + 1))}" fill="#fff1c4" stroke="${INK}" ${mw(.15)}/>`; } }
+    s += `<g opacity=".38">${rod([CX, CY, z0], [CX, CY, zi(FLOOR)], CON_R, CRATER, toneI, 1, CON_R, 14)}</g>`;
+    put([[CX - CON_R, CY - CON_R, z0], [CX + CON_R, CY + CON_R, zi(FLOOR)]], s); }
+  return K.parts;
+}
+function quakeRings(st){
+  return st.quakes.map(q => { const [X, Y] = P(...q.p), a = q.age/q.life, r = (1 + 6*a)*1.22;
+    return `<circle cx="${f(X)}" cy="${f(Y)}" r="${f(r)}" fill="none" stroke="#e2483d" ${mw(.5)} opacity="${f(1 - a)}"/><circle cx="${f(X)}" cy="${f(Y)}" r="${f(.6)}" fill="#e2483d" opacity="${f(1 - a)}"/>`; }).join('');
+}
+
+/* ---------- panache, fumerolles, bombes ---------- */
+function puffSvg(p){
+  const [X, Y] = P(p.x, p.y, p.z), r = p.r*1.22, a = Math.sqrt(Math.max(0, 1 - p.age/p.life))*p.op;
+  const cs = [[-.42, .05, .68], [.4, -.12, .64], [0, -.42, .6], [.05, .2, .62]].map(([dx, dy, k]) => [X + dx*r, Y + dy*r, k*r]);
+  const c = st2 => cs.map(([x, y, rr]) => `<circle cx="${f(x)}" cy="${f(y)}" r="${f(rr)}" ${st2}/>`).join('');
+  return `<g opacity="${f(a)}">${c(`fill="${INK}" stroke="${INK}" ${mw(.7)}`)}${c(`fill="${p.col}"`)}</g>`;
+}
+function bombSvg(b){
+  const [X, Y] = P(b.x, b.y, b.z); let s = '';
+  if (b.tr.length > 1) s += `<path d="${'M' + b.tr.map(p => { const q = P(...p); return f(q[0]) + ' ' + f(q[1]); }).join('L')}" fill="none" stroke="${b.lava ? BRIGHT : '#ff8a3d'}" ${mw(b.lava ? .5 : .35)} opacity="${f(b.lava ? .9 : .6*b.hot)}" stroke-linecap="round"/>`;
+  return s + `<circle cx="${f(X)}" cy="${f(Y)}" r="${f(b.r*1.22)}" fill="${b.lava ? mix(HOT, BRIGHT, b.hot) : mix('#2b2522', '#ff8a3d', b.hot*.8)}" stroke="${INK}" ${mw(.3)}/>`;
+}
+function fx(st){
+  const back = [], front = [];
+  for (const p of st.puffs) (hidden([p.x, p.y, p.z]) ? back : front).push({ d: depthOf([p.x, p.y, p.z]), svg: puffSvg(p) });
+  for (const b of st.bombs) (hidden([b.x, b.y, b.z]) ? back : front).push({ d: depthOf([b.x, b.y, b.z]), svg: bombSvg(b) });
+  const j = a => a.sort((p, q) => p.d - q.d).map(p => p.svg).join('');
+  return [j(back), j(front)];
+}
+
+/* ---------- les étiquettes ---------- */
+function lcCallouts(items){
+  if (!items.length || !labelsShown()) return '';
+  const svgEl = document.getElementById('fig'), vb = svgEl.viewBox.baseVal, ctm = svgEl.getScreenCTM();
+  const k = INK_K*Math.min(1, Math.pow(760/(svgEl.clientWidth || 760), .75)), u = window.LBL_U ? LBL_U() : 0, fs = u ? 10*u : 8.6*k, hgt = u ? 17*u : fs*1.8, gap = hgt + (u ? 3*u : 3*k);
+  const below = id => { const el = document.getElementById(id); if (!el || !ctm || u) return -1e9;
+    const r = el.getBoundingClientRect(); return new DOMPoint(r.left, r.bottom + 10).matrixTransform(ctm.inverse()).y + hgt/2; };
+  const pts = items.map(it => { const [X, Y] = P(...it.at); return { ...it, X, Y }; }).sort((a, b) => a.X - b.X), half = Math.ceil(pts.length/2);
+  let s = '';
+  for (const [col, side, top] of [[pts.slice(0, half), -1, below('btns')], [pts.slice(half), 1, Math.max(below('stats'), below('xrb'))]]){
+    const t0 = Math.max(vb.y + hgt, top);
+    col.sort((a, b) => a.Y - b.Y);
+    let y = -1e9; for (const c of col){ c.py = Math.max(c.Y, y + gap, t0); y = c.py; }
+    const over = col.length ? col[col.length - 1].py - (vb.y + vb.height - hgt) : 0;
+    if (over > 0){ const room = col[0].py - t0; for (const c of col) c.py -= Math.min(over, room); }
+    for (const c of col){
+      c.n = ((window.__ln || (window.__ln = {}))[c.text] || (__ln[c.text] = Object.keys(__ln).length + 1));
+      const w = u ? hgt*(c.n > 9 ? 1.3 : 1) : c.text.length*fs*.62 + fs*1.5;
+      const px = side < 0 ? vb.x + 3*k + w/2 : vb.x + vb.width - 3*k - w/2, ex = px - side*w/2;
+      s += `<g class="tag${c.on ? ' on' : ''}" data-n="${c.n}" data-t="${c.text}"><path d="M${f(c.X)} ${f(c.Y)}L${f(ex - side*4*k)} ${f(c.py)}L${f(ex)} ${f(c.py)}" fill="none" stroke="${INK}" stroke-width="1"/>`
+        + `<circle cx="${f(c.X)}" cy="${f(c.Y)}" r="${f(1.4*k)}" fill="${INK}"/>`
+        + `<rect x="${f(px - w/2)}" y="${f(c.py - hgt/2)}" width="${f(w)}" height="${f(hgt)}" rx="${f(hgt/2)}" fill="${c.on ? 'var(--accent,#f4b829)' : '#fff4d6'}" stroke="${INK}" stroke-width="1.2"/>`
+        + `<text x="${f(px)}" y="${f(c.py + fs*.36)}" font-size="${f(fs)}" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-weight="800" letter-spacing=".04em" fill="${INK}">${u ? c.n : c.text}</text></g>`; } }
+  return s;
+}
+
+function surfaceLabels(st){
+  const hi = st.puffs.filter(p => p.kind === 'ash').reduce((a, p) => !a || p.z > a.z ? p : a, null), b = st.bombs.find(x => !x.lava);
+  const fm = FLOW[Math.min(FLOW.length - 1, Math.floor(st.flow*(FLOW.length - 1)*.6))];
+  return [
+    { at: [CX, CY - 8.4, zi(RIM)], text: 'CRATÈRE', on: st.lake > .3 },
+    ...(hi && hi.z > 130 ? [{ at: [hi.x, hi.y, hi.z], text: 'PANACHE ÉRUPTIF', on: st.erupting > 0 }] : []),
+    ...(b ? [{ at: [b.x, b.y, b.z], text: 'BOMBES VOLCANIQUES', on: true }] : []),
+    ...(st.flow > .05 ? [{ at: [CX + fm.r*Math.cos(fm.a), CY + fm.r*Math.sin(fm.a), surf(fm.r)], text: 'COULÉE DE LAVE', on: st.flowHot > .3 }] : []),
+    ...(st.fum > .2 ? [{ at: [CX - 6, CY + 6, zi(RIM) + 1], text: 'FUMEROLLES', on: true }] : []),
+    { at: [CX + 26*Math.cos(1.9), CY + 26*Math.sin(1.9), surf(26)], text: 'FLANC DU VOLCAN', on: false },
+    { at: [HUT[2], (HUT[1] + HUT[3])/2, GZ + 7], text: 'STATION SISMIQUE', on: st.seisAmp > .3 },
+    { at: [GPS[0], GPS[1], GZ + 6.6], text: 'STATION GPS', on: st.infl > 3 },
+    { at: [121, 122, GZ + 5], text: 'VILLAGE', on: false },
+    { at: [W, 70, 14], text: 'STRATES', on: false } ];
+}
+function insideLabels(st){
+  const z0 = CHAMBER[0] + CHAMBER[1], zm = z0 + (zi(FLOOR) - z0)*st.rise;
+  return [
+    { at: [CX, CY - CHAMBER[2]*.7, CHAMBER[0] + 4], text: 'CHAMBRE MAGMATIQUE', on: st.charge > .5 },
+    { at: [CX + 3.3, CY + 6, 6], text: 'DYKE NOURRICIER', on: st.recharging },
+    { at: [SILL[0] - 6, SILL[1], SILL[2]], text: 'SILL', on: false },
+    { at: [CX + CON_R, CY, 78], text: 'CHEMINÉE', on: st.rise > .5 },
+    ...(st.rise > .05 ? [{ at: [CX, CY + CON_R, zm], text: 'MAGMA', on: st.rise > .5 }, { at: [CX - 1, CY, z0 + (zm - z0)*.45], text: 'BULLES DE GAZ', on: st.erupting > 0 }] : []),
+    { at: [CX, CY - FLR, zi(FLOOR)], text: 'LAC DE LAVE', on: st.lake > .3 },
+    ...(st.quakes.length ? [{ at: st.quakes[st.quakes.length - 1].p, text: 'SÉISMES', on: true }] : []),
+    { at: [W, 70, 14], text: 'STRATES', on: false } ];
+}
+
+/* ---------- la scène ---------- */
+function scene(st, m){
+  INFL = st.infl; const k = ease(st.xr || 0);
+  const [back, front] = fx(st);
+  const items = [{ box: [[15, 15, GZ], [115, 115, zi(RIM) + .5]], svg: coneSvg(st) }, ...propsParts(st, m)];
+  let s = back;
+  if (k > 0) s += `<g opacity="${f(1 - .62*k)}">${byDepthG(items)}</g><g opacity="${f(k)}">${byDepthG(insideParts(st)) + quakeRings(st)}</g>`;
+  else s += byDepthG(items);
+  s += front;
+  if (labelsShown()) s += lcCallouts(k > .6 ? insideLabels(st) : surfaceLabels(st));
+  return s;
+}
+
+/* ---------- le déroulement ---------- */
+let ui, looping = false, SIM = false;
+const rnd = (() => { let sd = 7; return () => (sd = (sd*16807) % 2147483647) / 2147483647; })();
+function emitPuff(st, kind, p){
+  const K = { ash: { r: 2.4, life: 6, op: .95, v: [(rnd() - .5)*3, (rnd() - .5)*3, 34 + rnd()*12], g: 1.9, col: mix('#7d7671', '#bdb6af', rnd()) },
+    steam: { r: 1.2, life: 1.8, op: .9, v: [(rnd() - .5)*2, (rnd() - .5)*2, 9], g: 1.6, col: '#fbfaf6' },
+    dust: { r: .8, life: 1, op: .8, v: [0, 0, 3], g: 2.2, col: '#a89a8a' } }[kind];
+  st.puffs.push({ kind, x: p[0], y: p[1], z: p[2], vx: K.v[0], vy: K.v[1], vz: K.v[2], r: K.r, life: K.life, op: K.op, g: K.g, col: K.col, age: 0 });
+}
+function emitBomb(st, lava){
+  const a = rnd()*2*Math.PI, sp = lava ? 3 + rnd()*4 : 9 + rnd()*14, up = lava ? 22 + rnd()*14 : 30 + rnd()*22;
+  st.bombs.push({ x: CX + Math.cos(a)*1.5, y: CY + Math.sin(a)*1.5, z: zi(FLOOR) + 1, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp, vz: up, r: lava ? .45 + rnd()*.3 : .7 + rnd()*.6, hot: 1, lava, tr: [], age: 0 });
+}
+function quake(st, mag = 1){
+  const a = rnd()*2*Math.PI, r = rnd()*CHAMBER[2]*.9, z = CHAMBER[0] + CHAMBER[1]*(.5 + rnd());
+  st.quakes.push({ p: [CX + r*Math.cos(a), CY + r*Math.sin(a), z], age: 0, life: .9 });
+  st.seisAmp = Math.min(1.6, st.seisAmp + .5*mag); st.shake = Math.max(st.shake, .22*mag);
+}
+function tick(st, dt){
+  st.clock += dt; INFL = st.infl;
+  // 1. recharge: the chamber fills, pressure and swelling rise, the rock cracks
+  if (st.recharging){ st.charge = Math.min(1, st.charge + dt/6); st.p = Math.max(st.p, 2 + (MAXP - 2)*st.charge); st.infl = Math.max(st.infl, MAXINF*st.charge);
+    st.fum = Math.max(st.fum, st.charge); if (rnd() < dt*(1.5 + 5*st.charge)) quake(st, .6 + .6*rnd());
+    if (st.charge >= 1) st.recharging = false; }
+  // 2. explosive eruption: column, bombs, lava fountain; the chamber empties
+  if (st.erupting > 0){ st.eT += dt; st.rise = Math.min(1, st.rise + dt/1.2); st.lake = Math.min(1, st.lake + dt/1.5);
+    st.charge = Math.max(.15, st.charge - dt/12); st.p = Math.max(1.5, st.p - dt*1.9); st.infl = Math.max(0, st.infl - dt*1.1);
+    st.ash = Math.min(1, st.ash + dt/10); st.plumeKm = Math.min(14, st.plumeKm + dt*2.4);
+    if (st.rise > .8){ st.puffT -= dt; while (st.puffT <= 0){ st.puffT += .1; emitPuff(st, 'ash', [CX + (rnd() - .5)*4, CY + (rnd() - .5)*4, zi(RIM) + 1]); }
+      if (rnd() < dt*7) emitBomb(st, false); if (rnd() < dt*26) emitBomb(st, true); }
+    st.seisAmp = Math.max(st.seisAmp, .5); st.shake = Math.max(st.shake, .08);
+    if (st.eT > 9){ st.erupting = 0; } }
+  else st.plumeKm = Math.max(0, st.plumeKm - dt*1.5);
+  // 3. lava flow: the degassed magma spills over the rim and runs down the slope
+  if (st.flowing){ st.flow = Math.min(1, st.flow + dt/8); st.flowHot = 1; st.lake = Math.max(st.lake, .9); st.p = Math.max(1.5, st.p - dt*.6);
+    if (st.flow >= 1) st.flowing = false; }
+  // 4. back to calm: everything settles
+  if (st.calming){ st.cT += dt; st.rise = Math.max(0, st.rise - dt/4); st.lake = Math.max(0, st.lake - dt/4); st.flowHot = Math.max(0, st.flowHot - dt/6);
+    st.infl = Math.max(0, st.infl - dt*3); st.p = Math.max(1.5, st.p - dt*3); st.charge = Math.max(.1, st.charge - dt/5); st.fum = Math.max(.15, st.fum - dt/5);
+    if (st.cT > 6.5) st.calming = false; }
+  // fumaroles while there is gas; the seismograph; shaking
+  if (st.fum > .2 && !st.erupting){ st.fumT = (st.fumT || 0) - dt; if (st.fumT <= 0){ st.fumT = .35/st.fum; const a = rnd()*2*Math.PI; emitPuff(st, 'steam', [CX + 7.6*Math.cos(a), CY + 7.6*Math.sin(a), zi(RIM)]); } }
+  st.seisT = (st.seisT || 0) - dt;
+  if (st.seisT <= 0){ st.seisT = .06; st.seis.push(st.seisAmp*(rnd()*2 - 1) + .06*(rnd() - .5)); st.seis.shift(); }
+  st.seisAmp = Math.max(st.erupting ? .4 : 0, st.seisAmp - dt*1.6);
+  st.shake = Math.max(0, st.shake - dt);
+  for (const q of st.quakes) q.age += dt; st.quakes = st.quakes.filter(q => q.age < q.life);
+  for (const p of st.puffs){ p.age += dt;
+    if (p.kind === 'ash'){ const top = 146 + 6*Math.sin(p.x); if (p.z > top){ p.vz *= 1 - 3*dt; p.vx += WIND[0]*9*dt; p.vy += WIND[1]*9*dt; p.r += p.g*.6*dt; } else p.vz *= 1 - .3*dt; }
+    else p.vz *= 1 - .8*dt;
+    p.x += p.vx*dt; p.y += p.vy*dt; p.z += p.vz*dt; p.r = Math.min(p.kind === 'ash' ? 11 : 6, p.r + p.g*dt); }
+  st.puffs = st.puffs.filter(p => p.age < p.life);
+  for (const b of st.bombs){ b.age += dt; b.vz -= 42*dt; b.x += b.vx*dt; b.y += b.vy*dt; b.z += b.vz*dt; b.hot = Math.max(0, b.hot - dt*(b.lava ? .8 : .35));
+    b.tr.push([b.x, b.y, b.z]); if (b.tr.length > 6) b.tr.shift();
+    const r = Math.hypot(b.x - CX, b.y - CY), g = r < 8.4 ? zi(FLOOR) : surf(r);
+    if (b.z < g){ b.dead = true; if (!b.lava) emitPuff(st, 'dust', [b.x, b.y, g]); } }
+  st.bombs = st.bombs.filter(b => !b.dead && b.age < 6);
+  // the ground shakes a little with each quake
+  const art = document.getElementById('art'); if (art) art.setAttribute('transform', st.shake > 0 ? `translate(${f((rnd() - .5)*st.shake*4*INK_K)} ${f((rnd() - .5)*st.shake*2*INK_K)})` : '');
+  return !!(st.recharging || st.erupting || st.flowing || st.calming || st.puffs.length || st.bombs.length || st.quakes.length || st.shake > 0 || st.seisAmp > .01
+    || (st.flowHot > 0 && st.flowHot < 1 && st.calming) || (st.xr > .5 && st.rise > .01));
+}
+function run(){ if (looping || SIM) return; looping = true; ui.animate(dt => { const b = tick(ui.st, Math.min(dt, .05)); if (!b) looping = false; return b; }); }
+function recharge(st){
+  if (st.erupting) return ui.flash('Le volcan est déjà en éruption');
+  if (st.charge >= .99) return ui.flash("La chambre magmatique est pleine : l'éruption menace");
+  if (st.recharging) return ui.flash('Le magma remonte déjà');
+  st.recharging = true; st.calming = false; run();
+}
+function erupt(st){
+  if (st.erupting) return ui.flash("L'éruption est en cours");
+  if (st.p < 14) return ui.flash(`Pression trop faible (${fr1(st.p)} MPa) : le magma doit d'abord remonter`);
+  st.recharging = false; st.calming = false; st.erupting = 1; st.eT = 0; st.puffT = 0; run();
+}
+function lavaFlow(st){
+  if (st.flowing) return ui.flash('La lave coule déjà');
+  if (st.flow >= .99 && st.flowHot > .5) return ui.flash('La coulée est arrivée au pied du volcan');
+  if (st.rise < .5 && st.p < 10) return ui.flash('Pas assez de magma dans la cheminée : il doit d\'abord remonter');
+  if (st.flow >= .99) st.flow = 0;                                      // a new flow over the old, cold one
+  st.calming = false; st.flowing = true; if (st.rise < .5) st.rise = .5; run();
+}
+function calm(st){
+  if (!st.erupting && !st.flowing && !st.recharging && st.p < 3 && st.flowHot < .05) return ui.flash('Le volcan est déjà calme');
+  st.erupting = 0; st.flowing = false; st.recharging = false; st.calming = true; st.cT = 0; run();
+}
+
+ui = mountFigure({
+  fig: '03', turn: 'full', title: 'Volcan en éruption',
+  size: [W, D, H], palette: 'tomato',
+  state: { charge: .1, p: 1.5, infl: 0, rise: 0, lake: 0, flow: 0, flowHot: 0, ash: 0, fum: .15, plumeKm: 0, recharging: false, erupting: 0, eT: 0,
+    flowing: false, calming: false, cT: 0, puffs: [], bombs: [], quakes: [], seis: Array(60).fill(0), seisAmp: 0, shake: 0, clock: 0, puffT: 0 },
+  scene, ground: st => groundSvg(st), groundKey: st => ease(st.xr || 0).toFixed(3) + '/' + st.ash.toFixed(1),
+  stats: st => [
+    { label: 'Pression', value: fr1(st.p) + ' MPa' },
+    { label: 'Gonflement du sol', value: frInt(st.infl) + ' cm', small: true },
+    { label: 'Panache', value: fr1(st.plumeKm) + ' km', small: true } ],
+  buttons: [
+    { label: 'Remontée du magma', onClick: st => recharge(st) },
+    { label: 'Éruption explosive', onClick: st => erupt(st) },
+    { label: 'Coulée de lave', onClick: st => lavaFlow(st) },
+    { label: 'Retour au calme', onClick: st => calm(st) } ],
+  acts: { cone: st => st.p >= 14 ? erupt(st) : recharge(st) },
+  params: (st, q) => { for (const k of ['charge', 'p', 'infl', 'rise', 'lake', 'flow', 'flowHot', 'ash', 'fum']) if (q.has(k)) st[k] = +q.get(k); },
+});
+xrMount(() => ui, () => '');
+// tests: ?sim=Remontée@0.3,Éruption@7&at=9 presses the buttons at those times (s) in a fast simulation, then draws once;
+// ?shot=1 hides the page around the drawing; ?bench=1 times a redraw
+(() => { const q = new URLSearchParams(location.search), st = ui.st;
+  if (q.has('at')){ const acts = { 'remontée': recharge, 'éruption': erupt, 'coulée': lavaFlow, retour: calm };
+    const ev = (q.get('sim') || '').split(',').filter(Boolean).map(s => { const [w, t] = s.split('@'); return [acts[w.toLowerCase()], +t]; }).sort((a, b) => a[1] - b[1]);
+    SIM = true; let t = 0, i = 0; const end = +q.get('at');
+    while (t < end){ while (i < ev.length && ev[i][1] <= t) ev[i++][0](st); tick(st, 1/60); t += 1/60; }
+    SIM = false; ui.render(); }
+  if (q.get('shot') === '1'){ const cs = document.createElement('style');
+    cs.textContent = '.actions,#stats,.vset,.zchip,body>header,.controls,.made-with,.lgd,.toast{visibility:hidden!important}'; document.head.appendChild(cs); }
+  if (q.get('bench') === '1'){ const t0 = performance.now(); for (let i = 0; i < 5; i++) ui.render(); document.documentElement.dataset.bench = ((performance.now() - t0)/5).toFixed(1); }
+})();
+/* ---------- la page en français ---------- */
+(() => {
+  const tr = { 'Hand-drawn wobble': 'Trait tremblé', 'Colour': 'Couleur', 'View': 'Vue', 'Labels': 'Étiquettes' };
+  document.querySelectorAll('.ctl label').forEach(l => { if (tr[l.textContent]) l.textContent = tr[l.textContent]; });
+  const set = (id, t) => { const e = document.getElementById(id); if (e) e.textContent = t; };
+  set('vreset', 'Vue de face'); set('vspin', 'Faire pivoter'); set('xrb', 'Transparence'); set('lblb', 'Étiquettes');
+  const pn = { mustard: 'moutarde', tomato: 'tomate', mint: 'menthe', cobalt: 'cobalt', blush: 'rose' };
+  document.querySelectorAll('#pals .sw').forEach(b => { if (pn[b.title]) b.title = pn[b.title]; });
+  const mwl = document.querySelector('.made-with a'); if (mwl) mwl.textContent = 'Fait avec Colorfigures';
+  // in the gallery (figures/…), a way back to all the figures, at the top and at the bottom
+  if (/\/figures\/[^/]*$/.test(location.pathname)){
+    const hd = document.querySelector('body > header'); if (hd) hd.insertAdjacentHTML('beforeend', '<span><a href="../" style="color:inherit">← Toutes les figures</a></span>');
+    if (mwl) mwl.insertAdjacentHTML('beforebegin', '<a href="../">← Toutes les figures</a> · '); }
+  addEventListener('load', () => setTimeout(() => {
+    for (const [c, t] of [['.zm', 'Dézoomer'], ['.zp', 'Taille normale'], ['.zi', 'Zoomer']]){ const e = document.querySelector(c); if (e) e.setAttribute('aria-label', t); } }, 0));
+})();
+/* ---------- grand écran et plein écran ----------
+   The page is 760 px wide by default: on a large window the figure grows with the window's height (so it never
+   needs scrolling), up to 1800 px. A button beside the zoom chip (or the F key) puts the figure in full screen,
+   without the title and the settings, and the figure then fills the screen. */
+(() => {
+  const css = document.createElement('style');
+  css.textContent = `@media (min-width:561px){
+      :root{--figw:max(760px,min(1800px,calc((100vh - 250px)*1.3333)))}
+      body>header,.stage,#fig,.controls,.made-with,.lgd{max-width:var(--figw)!important}
+      html.fs{--figw:min(calc(100vw - 32px),calc((100vh - 24px)*1.3333))}
+      html.fs body{padding-top:10px;padding-bottom:10px}
+      html.fs body>header,html.fs .controls,html.fs .made-with{display:none!important}}
+    @media (min-width:1800px) and (min-height:1050px){.actions,#stats,.vset,.zchip{zoom:1.3}}`;
+  css.textContent += `
+    .zchip .fsb{display:inline-grid;place-items:center}
+    .fsb svg{width:12px;height:12px}`;
+  document.head.appendChild(css);
+  let rt = 0; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => ui.render(), 150); });   // label columns sit under the buttons
+  const root = document.documentElement, enter = root.requestFullscreen || root.webkitRequestFullscreen;
+  if (!enter) return;                                                  // iPhone Safari: no full screen for pages
+  const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const toggle = () => isFs() ? (document.exitFullscreen || document.webkitExitFullscreen).call(document) : enter.call(root);
+  const icon = out => `<svg viewBox="0 0 16 16" fill="none" stroke="#231e16" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${out
+    ? 'M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5' : 'M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5'}"/></svg>`;
+  let btn = null;
+  const sync = () => { root.classList.toggle('fs', isFs());
+    if (btn){ btn.innerHTML = icon(isFs()); btn.title = isFs() ? 'Quitter le plein écran (F)' : 'Plein écran (F)'; btn.setAttribute('aria-label', btn.title); }
+    dispatchEvent(new Event('resize')); requestAnimationFrame(() => ui.render()); };   // labels follow the new size
+  document.addEventListener('fullscreenchange', sync); document.addEventListener('webkitfullscreenchange', sync);
+  addEventListener('load', () => setTimeout(() => { const chip = document.querySelector('.zchip'); if (!chip) return;
+    btn = document.createElement('button'); btn.type = 'button'; btn.className = 'fsb'; btn.onclick = toggle; chip.prepend(btn); sync(); }, 0));
+  addEventListener('keydown', e => { if (e.key.toLowerCase() !== 'f' || e.metaKey || e.ctrlKey || e.altKey || /input|textarea/i.test(e.target.tagName)) return; e.preventDefault(); toggle(); });
+})();
+</script></body></html>

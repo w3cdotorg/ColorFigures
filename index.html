@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ColorFigures</title>
-<meta name="description" content="Des objets du quotidien dessinés comme à l'encre, en perspective isométrique, que l'on peut faire pivoter, explorer de l'intérieur et voir en fonctionnement. Réalisés par Claude avec Colorfigures.">
+<meta name="description" content="Des objets du quotidien et des phénomènes naturels dessinés comme à l'encre, en perspective isométrique, que l'on peut faire pivoter, explorer de l'intérieur et voir en fonctionnement. Réalisés par Claude avec Colorfigures.">
 <meta property="og:title" content="ColorFigures">
 <meta property="og:description" content="Des objets du quotidien dessinés comme à l'encre, à faire pivoter, à explorer de l'intérieur et à voir en fonctionnement.">
 <meta property="og:image" content="https://w3cdotorg.github.io/ColorFigures/thumbs/locomotive-a-vapeur.jpg">
@@ -80,6 +80,14 @@
   .card h3{margin:0;font-size:18px}
   .card p{margin:0;color:var(--muted);font-size:15px}
   .card .go{margin-top:auto;padding-top:10px;font:700 13px/1 var(--mono)}
+  .card .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+  .tg{font:700 11px/1 var(--mono);letter-spacing:.04em;color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:999px;padding:5px 9px}
+  .filters{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+  .filters button{font:700 13px/1 var(--mono);color:var(--ink);background:var(--card);border:1.5px solid var(--ink);border-radius:999px;padding:8px 13px;cursor:pointer}
+  .filters button small{font-weight:600;color:var(--muted);margin-left:6px}
+  .filters button[aria-pressed=true]{background:var(--ink);color:var(--paper)} .filters button[aria-pressed=true] small{color:#cfc8ba}
+  .filters button:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+  .card[hidden]{display:none}
   .card.soon{align-self:start;border-style:dashed;box-shadow:none;align-items:center;justify-content:center;text-align:center;padding:28px;color:var(--muted);min-height:220px}
   .card.soon:hover{transform:none}
   .card.soon b{font:700 15px/1.3 var(--mono);color:var(--ink);display:block;margin-bottom:6px}
@@ -117,7 +125,7 @@
     <div>
       <p class="kicker">Illustrations interactives</p>
       <h1><span>ColorFigures</span></h1>
-      <p class="lead">Des objets du quotidien dessinés comme à l'encre, en perspective isométrique, que l'on peut faire pivoter, explorer de l'intérieur et voir en fonctionnement.</p>
+      <p class="lead">Des objets du quotidien et des phénomènes naturels dessinés comme à l'encre, en perspective isométrique, que l'on peut faire pivoter, explorer de l'intérieur et voir en fonctionnement.</p>
       <p class="sub">Chaque figure est une page web autonome, réalisée par Claude à l'aide de Colorfigures, un module de compétences (<em>skill</em>) conçu par April Zhu. Aucune installation ni aucun compte ne sont nécessaires : il suffit d'ouvrir la page et d'utiliser les boutons.</p>
       <div class="btns">
         <a class="btn primary" href="figures/locomotive-a-vapeur.html">▶ Ouvrir la locomotive</a>
@@ -161,7 +169,8 @@
     <p class="kicker">Collection</p>
     <h2>Les figures</h2>
     <p class="sub">Survolez une vignette pour découvrir le mécanisme, puis cliquez pour manipuler la figure. Les figures s'utilisent également sur téléphone.</p>
-    <div class="grid">
+    <div class="filters" id="filters" role="group" aria-label="Filtrer par catégorie"></div>
+    <div class="grid" id="grid">
       <a class="card" href="figures/locomotive-a-vapeur.html">
         <span class="shot">
           <img src="thumbs/locomotive-a-vapeur.jpg" width="1120" height="840" loading="lazy" alt="Locomotive à vapeur au château d'eau, à côté d'un tas de bûches.">
@@ -172,6 +181,7 @@
           <span class="num">FIG. 01</span>
           <h3>Locomotive à vapeur</h3>
           <p>Une locomotive 4-4-0 à bois des années 1860 fait le plein d'eau au château d'eau, charge son bois, alimente son foyer, puis repart.</p>
+          <span class="tags"><span class="tg">Train</span><span class="tg">Transport</span><span class="tg">Vapeur</span></span>
           <span class="go">Ouvrir la figure →</span>
         </span>
       </a>
@@ -185,11 +195,26 @@
           <span class="num">FIG. 02</span>
           <h3>TGV au départ de Montparnasse</h3>
           <p>Un TGV Duplex attend sous la caténaire 1 500 V, à la sortie de la dalle du Jardin Atlantique : pantographe levé, embarquement des voyageur·euse·s, fermeture des portes, puis démarrage.</p>
+          <span class="tags"><span class="tg">Train</span><span class="tg">Transport</span><span class="tg">Électricité</span></span>
+          <span class="go">Ouvrir la figure →</span>
+        </span>
+      </a>
+      <a class="card" href="figures/volcan-en-eruption.html">
+        <span class="shot">
+          <img src="thumbs/volcan-en-eruption.jpg" width="1120" height="840" loading="lazy" alt="Un stratovolcan sur un bloc de terrain aux strates apparentes : panache de cendres, bombes volcaniques et coulée de lave qui descend vers un village.">
+          <img class="alt" src="thumbs/volcan-en-eruption-dedans.jpg" width="1120" height="840" loading="lazy" alt="" aria-hidden="true">
+          <span class="badge"><span class="off">▶ Ouvrir</span><span class="on">Transparence</span></span>
+        </span>
+        <span class="body">
+          <span class="num">FIG. 03</span>
+          <h3>Volcan en éruption</h3>
+          <p>Un stratovolcan en bloc-diagramme : le magma remonte dans la chambre, le sol gonfle et tremble, puis viennent le panache éruptif, les bombes volcaniques et la coulée de lave.</p>
+          <span class="tags"><span class="tg">Phénomène naturel</span><span class="tg">Volcan</span><span class="tg">Géologie</span></span>
           <span class="go">Ouvrir la figure →</span>
         </span>
       </a>
       <div class="card soon" aria-hidden="true">
-        <span><b>Prochaine figure</b>Un autre objet du quotidien, bientôt à faire pivoter et à explorer.</span>
+        <span><b>Prochaine figure</b>Un autre objet ou phénomène, bientôt à faire pivoter et à explorer.</span>
       </div>
     </div>
   </div>
@@ -211,5 +236,27 @@
   </div>
 </footer>
 
+<script>
+  // categories: the chips are built from the cards' own tags, so a new card brings its tags with it; ?tag=Volcan preselects
+  (() => {
+    const bar = document.getElementById('filters'), cards = [...document.querySelectorAll('#grid .card:not(.soon)')], soon = document.querySelector('#grid .soon');
+    const tagsOf = c => [...c.querySelectorAll('.tg')].map(t => t.textContent.trim());
+    const all = [], count = {};
+    for (const c of cards) for (const t of tagsOf(c)){ if (!(t in count)){ all.push(t); count[t] = 0; } count[t]++; }
+    const norm = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const mk = (label, n, value) => { const b = document.createElement('button'); b.type = 'button'; b.dataset.tag = value;
+      b.innerHTML = `${label}<small>${n}</small>`; b.addEventListener('click', () => pick(value, true)); bar.appendChild(b); };
+    mk('Toutes', cards.length, '');
+    for (const t of all) mk(t, count[t], t);
+    function pick(tag, push){
+      for (const b of bar.children) b.setAttribute('aria-pressed', String(b.dataset.tag === tag));
+      for (const c of cards) c.hidden = !!tag && !tagsOf(c).includes(tag);
+      if (soon) soon.hidden = !!tag;
+      if (push){ const u = new URL(location.href); if (tag) u.searchParams.set('tag', tag); else u.searchParams.delete('tag'); history.replaceState(null, '', u); }
+    }
+    const want = new URLSearchParams(location.search).get('tag');
+    pick(all.find(t => want && norm(t) === norm(want)) || '', false);
+  })();
+</script>
 </body>
 </html>
