@@ -65,6 +65,41 @@ const sepOrder = (p, q) => { if (!p.box || !q.box) return 0;
   for (let k = 0; k < 3; k++){ if (p.box[1][k] <= q.box[0][k] + 1e-6) return CAM_V[k] >= 0 ? -1 : 1; if (q.box[1][k] <= p.box[0][k] + 1e-6) return CAM_V[k] >= 0 ? 1 : -1; }
   return 0; };
 const byDepth = parts => parts.filter(Boolean).sort((p,q) => sepOrder(p,q) || (depthOf(p.at || boxMid(p.box)) - depthOf(q.at || boxMid(q.box)))).map(p => p.svg).join('');
+// byDepth for big scenes (~100 parts and more, every part with a box). Array.sort with a comparator that is not
+// transitive (box separation, else centre depth) misplaces parts once there are many, and the order can flip from one
+// frame to the next (flicker). Here only pairs that overlap on screen get an order: boxes separated along an axis (every
+// separating axis agreeing, else the pair is left unordered), else centre depth. Parts caught in a cycle (Tarjan) are
+// drawn together: separated boxes keep their order, the depth guesses give way. Keep moving parts from overlapping a
+// very large box (a building, a slab): a cycle through it is what flickers.
+function byDepthG(parts){
+  const it = parts.filter(Boolean).map(p => { const b = p.box, X = [], Y = [];
+    for (const x of [b[0][0], b[1][0]]) for (const y of [b[0][1], b[1][1]]) for (const z of [b[0][2], b[1][2]]){ const q = P(x, y, z); X.push(q[0]); Y.push(q[1]); }
+    return { p, d: depthOf(boxMid(b)), x0: Math.min(...X), x1: Math.max(...X), y0: Math.min(...Y), y1: Math.max(...Y), out: [], hard: [], i: -1, low: 0, on: false }; });
+  for (let i = 0; i < it.length; i++) for (let j = i + 1; j < it.length; j++){ const a = it[i], b = it[j];
+    if (a.x1 <= b.x0 || b.x1 <= a.x0 || a.y1 <= b.y0 || b.y1 <= a.y0) continue;
+    let s = 0, clash = false;
+    for (let k = 0; k < 3; k++){ if (Math.abs(CAM_V[k]) < 1e-3) continue; const A = a.p.box, B = b.p.box, v = A[1][k] <= B[0][k] + 1e-6 ? (CAM_V[k] >= 0 ? -1 : 1) : B[1][k] <= A[0][k] + 1e-6 ? (CAM_V[k] >= 0 ? 1 : -1) : 0;
+      if (v && s && v !== s) clash = true; if (v) s = v; }
+    if (clash) continue;
+    const hard = !!s; if (!s) s = a.d <= b.d ? -1 : 1;
+    const [u, v] = s < 0 ? [a, b] : [b, a]; u.out.push(v); if (hard) u.hard.push(v); }
+  let n = 0; const stk = [], comps = [];
+  const visit = v => { v.i = v.low = n++; stk.push(v); v.on = true;
+    for (const w of v.out){ if (w.i < 0){ visit(w); v.low = Math.min(v.low, w.low); } else if (w.on) v.low = Math.min(v.low, w.i); }
+    if (v.low === v.i){ const c = []; let w; do { w = stk.pop(); w.on = false; c.push(w); } while (w !== v); comps.push(c); } };
+  for (const v of it.slice().sort((a, b) => a.d - b.d)) if (v.i < 0) visit(v);
+  const inside = c => { if (c.length < 2) return c; const set = new Set(c), indeg = new Map(c.map(v => [v, 0]));
+    for (const v of c) for (const w of v.hard) if (set.has(w)) indeg.set(w, indeg.get(w) + 1);
+    const left = new Set(c), out = [];
+    while (left.size){ let pick = null;
+      for (const v of left) if (!indeg.get(v) && (!pick || v.d < pick.d)) pick = v;
+      if (!pick) for (const v of left) if (!pick || v.d < pick.d) pick = v;
+      left.delete(pick); out.push(pick); for (const w of pick.hard) if (left.has(w)) indeg.set(w, indeg.get(w) - 1); }
+    return out; };
+  return comps.reverse().map(c => inside(c).map(v => v.p.svg).join('')).join('');
+}
+// labels are only built while they are shown (the Labels switch redraws): a figure's own label code can check this too
+const labelsShown = () => !document.documentElement.classList.contains('nolabels');
 // the half of a vertical ring that faces the viewer / is turned away, as [from, to] angles in degrees (0 = +x, 90 = +y)
 const nearHalf = () => [YAW - 90, YAW + 90], farHalf = () => [YAW + 90, YAW + 270];
 // an open container (cup, bin, cone, drum) between two rings: far inner wall, then its contents, then the near outer wall
@@ -207,6 +242,7 @@ let _clipN = 0;
 // dx, dy = where the pill sits, in screen units at the reference zoom (they scale with the figure like stroke widths).
 // on = that part is working right now (the pill turns the accent colour). Labels can be hidden with the Labels switch.
 function tag(p3, dx, dy, text, on=false){
+  if (!labelsShown()) return '';
   // on a phone (LBL_U = drawing units per screen px) the pill is a numbered badge and the names go in a legend under the figure
   const u = window.LBL_U ? LBL_U() : 0, n = ((window.__ln || (window.__ln = {}))[text] || (__ln[text] = Object.keys(__ln).length + 1));
   const k = INK_K, [X,Y] = P(...p3), fs = u ? 10*u : 8.6*k, h = u ? 17*u : fs*1.8, w = u ? h*(n > 9 ? 1.3 : 1) : text.length*fs*.62 + fs*1.5, cx = X + dx*k, cy = Y + dy*k;
@@ -304,6 +340,8 @@ const filterFor = k => `<filter id="hand" x="-3%" y="-3%" width="106%" height="1
      credit: false,                // optional: hide the small "Made with Colorfigures" link
      acts: { name(st, el, ui){} },  // clicks on act(name, …) groups; el has dataset
      params(st, q){}               // optional: read URLSearchParams for screenshot states
+     ground: (st, m) => svgString, // optional: the parts that never move, in their own layer, redrawn only when the view turns
+     groundKey: st => 'string',     // optional: also redraw the ground when this changes
    })  -> ui = { st, render, animate(stepFn), flash(text,ms) }
    animate(step): calls step(dt seconds) every frame and re-renders until step returns false. */
 addEventListener('error', e => { document.documentElement.dataset.errors = (document.documentElement.dataset.errors || '') + ' ' + e.message + ';'; });
@@ -398,7 +436,23 @@ function mountFigure(cfg){
 
   const art = document.getElementById('art'), readout = document.getElementById('readout');
   const ui = { st };
-  ui.render = () => { _clipN = 0; document.documentElement.style.setProperty('--accent', PALS[st.pal].l); art.innerHTML = inkScale(cfg.scene(st, PALS[st.pal])); if (!ui._flash) readout.textContent = cfg.readout ? cfg.readout(st) : ''; if (ui.drawStats) ui.drawStats(); };
+  // cfg.ground: what never moves (floor, track, fixed shadows) is drawn in its own layer, rebuilt only when the view
+  // (or cfg.groundKey(st)) changes; cfg.scene then draws the rest, every frame
+  let gLay = null, sLay = null, gKey = '';
+  ui.render = () => { document.documentElement.style.setProperty('--accent', PALS[st.pal].l);
+    if (cfg.ground){ if (!gLay || !gLay.isConnected){ art.innerHTML = '<g></g><g></g>'; gLay = art.firstChild; sLay = art.lastChild; gKey = ''; }
+      const key = YAW.toFixed(3) + '/' + PITCH.toFixed(3) + '/' + INK_K + '/' + st.pal + '/' + (cfg.groundKey ? cfg.groundKey(st) : '');
+      if (key !== gKey){ _clipN = 1e5; gLay.innerHTML = inkScale(cfg.ground(st, PALS[st.pal])); gKey = key; }
+      _clipN = 0; sLay.innerHTML = inkScale(cfg.scene(st, PALS[st.pal])); }
+    else { _clipN = 0; art.innerHTML = inkScale(cfg.scene(st, PALS[st.pal])); }
+    if (!ui._flash) readout.textContent = cfg.readout ? cfg.readout(st) : ''; if (ui.drawStats) ui.drawStats(); };
+  // while anything moves (an animation, a drag), the paper grain, a noise the browser recomputes over the whole figure
+  // every frame, is swapped for a flat tone of the same brightness; the wobbly line stays, the grain returns at rest
+  let moving = 0, calmT = 0;
+  const flat = on => { const fl = document.getElementById('hand'); if (!fl) return; const g1 = fl.querySelector('[result="g1"]'); if (!g1) return;
+    if (!fl.querySelector('[result="flat"]')){ const fd = document.createElementNS('http://www.w3.org/2000/svg', 'feFlood'); fd.setAttribute('flood-color', 'rgb(251,251,251)'); fd.setAttribute('result', 'flat'); g1.before(fd); }
+    g1.setAttribute('in2', on ? 'flat' : 'grain'); };
+  const calm = () => { clearTimeout(calmT); calmT = setTimeout(() => { if (!moving) flat(false); }, 250); };
   // big numbers in the top-right corner (credit, change, score…); a value that changes gets a little bump
   const statsEl = document.getElementById('stats'), prevStats = {};
   ui.drawStats = () => { if (!statsEl) return;
@@ -419,7 +473,8 @@ function mountFigure(cfg){
     for (const s of [...steps]) if (s(dt) === false) steps.delete(s);
     ui.render(); if (steps.size) drive(); };
   const drive = () => { if (driving) return; driving = true; requestAnimationFrame(frame); fbT = setTimeout(frame, 60); };
-  ui.animate = step => { if (!steps.size && !driving) lastT = performance.now(); steps.add(step); drive(); };
+  ui.animate = step => { if (!steps.size && !driving) lastT = performance.now(); moving++; clearTimeout(calmT); flat(true); let done = false;
+    steps.add(dt => { const r = step(dt); if (r === false && !done){ done = true; moving = Math.max(0, moving - 1); if (!moving) calm(); } return r; }); drive(); };
   ui.invalidate = () => drive();
 
   // clickable parts react on press, not on click: while something animates, the scene is redrawn every frame, so the
@@ -431,6 +486,8 @@ function mountFigure(cfg){
   const camTo = (y, p, ms=700) => { const y0 = YAW, p0 = PITCH, dy = ((y - y0 + 540) % 360) - 180, id = ++camAnim; let t = 0;
     ui.animate(dt => { if (id !== camAnim) return false; t += dt*1000; const k = Math.min(1, t / ms), e = ease(k); setCam(y0 + dy*e, p0 + (p - p0)*e); return k < 1; }); };
   ui.camTo = camTo;
+  svg.addEventListener('pointerdown', () => { clearTimeout(calmT); flat(true); });
+  addEventListener('pointerup', () => { if (!moving) calm(); });
   svg.addEventListener('pointerdown', e => { if (e.button || e.target.closest('[data-act]')) return;
     camAnim++; drag = { x:e.clientX, y:e.clientY, yaw:YAW, pitch:PITCH }; svg.classList.add("drag"); try { svg.setPointerCapture(e.pointerId); } catch {} });
   svg.addEventListener('pointermove', e => { if (!drag) return; const k = 300 / svg.getBoundingClientRect().width;
@@ -483,7 +540,7 @@ function mountFigure(cfg){
   // labels: the switch appears when the figure draws any tag(); ?labels=0 starts with them hidden
   const lblctl = document.getElementById('lblctl'), lbl = document.getElementById('lbl');
   const setLabels = on => { document.documentElement.classList.toggle('nolabels', !on); lbl.textContent = on ? 'On' : 'Off'; lbl.setAttribute('aria-pressed', on); };
-  lbl.onclick = () => setLabels(document.documentElement.classList.contains('nolabels'));
+  lbl.onclick = () => { setLabels(document.documentElement.classList.contains('nolabels')); ui.render(); };
   if (q.get('labels') === '0') setLabels(false);
   // testing: ?press=Label@ms,Label@ms clicks the buttons whose text starts with Label at those times after load
   // (any order, repeats allowed); Label>Choice picks a choice from a picker button (?press=Speed>3@300).
@@ -508,6 +565,7 @@ function mountFigure(cfg){
    xrGhost(body, mech, k, OUTp, x0, x1, m): far walls faintly, the working parts, then the case as a ghost over them.
    xrMount(getUI, caption): the See-through / Labels switches (top right), the caption under the figure, label hiding. */
 function xrCallouts(items, B){
+  if (!labelsShown()) return '';
   const pts = []; for (const x of [B[0], B[1]]) for (const y of [B[2], B[3]]) for (const z of [B[4], B[5]]) pts.push(P(x, y, z));
   const xmin = Math.min(...pts.map(p => p[0])), xmax = Math.max(...pts.map(p => p[0])), cx = (xmin + xmax)/2;
   // on a phone (LBL_U = drawing units per screen px) each label is a numbered badge and the names go in a legend under the figure
@@ -560,7 +618,7 @@ function xrMount(getUI, caption, opt = {}){   // opt.labelsOnly: only the Labels
   const sync = () => { if (xrb) xrb.setAttribute('aria-pressed', !!getUI().st.xrT); lblb.setAttribute('aria-pressed', !html.classList.contains('nolabels')); };
   if (xrb) xrb.onclick = () => { const u = getUI(), st = u.st; st.xr = st.xr || 0; st.xrT = st.xrT ? 0 : 1; sync();
     u.animate(dt => { const g = Math.sign(st.xrT - st.xr); st.xr = Math.min(1, Math.max(0, st.xr + g*dt/.7)); return st.xr !== st.xrT; }); };
-  lblb.onclick = () => { html.classList.toggle('nolabels'); sync(); };
+  lblb.onclick = () => { html.classList.toggle('nolabels'); sync(); getUI().render(); };
   sync();
   const cap = document.createElement('p'); cap.className = 'mcap'; document.querySelector('.stage').after(cap);
   const css = document.createElement('style');
@@ -729,36 +787,6 @@ function kit(){ const parts = [];
 function lineParts(K, pts, col, w, L = 12, edge = true){
   for (let i = 0; i < pts.length - 1; i++){ const a = pts[i], b = pts[i + 1], n = Math.max(1, Math.ceil(Math.hypot(...sub(b, a)) / L));
     for (let j = 0; j < n; j++){ const p = lerp3(a, b, j/n), q = lerp3(a, b, (j + 1)/n); K.put(rbox(p, q, Math.max(.15, w/2)), edge ? cable([p, q], col, w) : strk([p, q], col, w)); } } }
-// a long list in depth order: pairs that overlap on screen get an order (separated boxes, all separating axes agreeing;
-// else centre depth), parts caught in a cycle (Tarjan) are drawn together by depth, groups in graph order
-function lcSort(parts){
-  const it = parts.filter(Boolean).map(p => { const b = p.box, X = [], Y = [];
-    for (const x of [b[0][0], b[1][0]]) for (const y of [b[0][1], b[1][1]]) for (const z of [b[0][2], b[1][2]]){ const q = P(x, y, z); X.push(q[0]); Y.push(q[1]); }
-    return { p, d: depthOf(boxMid(b)), x0: Math.min(...X), x1: Math.max(...X), y0: Math.min(...Y), y1: Math.max(...Y), out: [], hard: [], i: -1, low: 0, on: false }; });
-  for (let i = 0; i < it.length; i++) for (let j = i + 1; j < it.length; j++){ const a = it[i], b = it[j];
-    if (a.x1 <= b.x0 || b.x1 <= a.x0 || a.y1 <= b.y0 || b.y1 <= a.y0) continue;
-    let s = 0, clash = false;
-    for (let k = 0; k < 3; k++){ if (Math.abs(CAM_V[k]) < 1e-3) continue; const A = a.p.box, B = b.p.box, v = A[1][k] <= B[0][k] + 1e-6 ? (CAM_V[k] >= 0 ? -1 : 1) : B[1][k] <= A[0][k] + 1e-6 ? (CAM_V[k] >= 0 ? 1 : -1) : 0;
-      if (v && s && v !== s) clash = true; if (v) s = v; }
-    if (clash) continue;
-    const hard = !!s; if (!s) s = a.d <= b.d ? -1 : 1;
-    const [u, v] = s < 0 ? [a, b] : [b, a]; u.out.push(v); if (hard) u.hard.push(v); }
-  let n = 0; const stk = [], comps = [];
-  const visit = v => { v.i = v.low = n++; stk.push(v); v.on = true;
-    for (const w of v.out){ if (w.i < 0){ visit(w); v.low = Math.min(v.low, w.low); } else if (w.on) v.low = Math.min(v.low, w.i); }
-    if (v.low === v.i){ const c = []; let w; do { w = stk.pop(); w.on = false; c.push(w); } while (w !== v); comps.push(c); } };
-  for (const v of it.slice().sort((a, b) => a.d - b.d)) if (v.i < 0) visit(v);
-  // inside a cycle, separated boxes still keep their order (hard edges); only the depth guesses give way
-  const inside = c => { if (c.length < 2) return c; const set = new Set(c), indeg = new Map(c.map(v => [v, 0]));
-    for (const v of c) for (const w of v.hard) if (set.has(w)) indeg.set(w, indeg.get(w) + 1);
-    const left = new Set(c), out = [];
-    while (left.size){ let pick = null;
-      for (const v of left) if (!indeg.get(v) && (!pick || v.d < pick.d)) pick = v;
-      if (!pick) for (const v of left) if (!pick || v.d < pick.d) pick = v;
-      left.delete(pick); out.push(pick); for (const w of pick.hard) if (left.has(w)) indeg.set(w, indeg.get(w) - 1); }
-    return out; };
-  return comps.reverse().map(c => inside(c).map(v => v.p.svg).join('')).join('');
-}
 // a turned part round a vertical axis at (x, y), from a profile [[z, r], ...] bottom to top
 function lathe(x, y, prof, M, w = 1.1, n = 14, sh = tone){
   const R = prof.map(([z, r]) => on(PZ(z), ellUV(x, y, Math.max(r, .05), Math.max(r, .05), n))); let s = '';
@@ -964,12 +992,18 @@ function platformParts(st, K){
 }
 
 /* ---------- la rame : motrice, voitures Duplex, pantographe ---------- */
-const NOSE = [[0, 3.0, 10.5, 15, 2], [3, 7.4, 9, 18, 4.2], [8, 10.2, 8.5, 21.8, 5.4], [16, 12.2, 8.5, 26, 6], [26, 13.4, 8.8, 30.2, 6.2],
-  [38, 13.95, 9.5, 34.4, 6], [50, 14.07, 10, 38, 5.8], [62, 14.07, 10, 40.4, 5.6], [72, 14.07, 10, 41, 5.5]];
+const NOSE = [[0, 3.0, 6.4, 15, 2], [3, 7.4, 5.2, 18, 4.2], [8, 10.2, 4.7, 21.8, 5.4], [16, 12.2, 4.6, 26, 6], [26, 13.4, 4.9, 30.2, 6.2],
+  [29.4, 13.6, 9.3, 31.4, 6.1], [38, 13.95, 9.5, 34.4, 6], [50, 14.07, 10, 38, 5.8], [62, 14.07, 10, 40.4, 5.6], [72, 14.07, 10, 41, 5.5]];
 const secAt = u => { let i = 0; while (i < NOSE.length - 2 && NOSE[i + 1][0] < u) i++; const a = NOSE[i], b = NOSE[i + 1], t = clamp((u - a[0])/(b[0] - a[0]), 0, 1);
   return a.map((v, k) => v + (b[k] - v)*t); };
+// the nose is two stacked parts: the white shell above ZS and, below it at the front, the dark lower shield; the split
+// keeps the shell's sorting box above the bogies' wheels and the shield's box ahead of them
+const ZS = 9.25, SHIELD = { l:'#6b7075', m:'#4e5357', d:'#33373a' }, NOSE_LOW = 29.4;
+const rr2 = (u0, v0, u1, v1, rt, rb, n = 6) => { const lim = r => Math.max(0, Math.min(r, (u1 - u0)/2, (v1 - v0)/2)); rt = lim(rt); rb = lim(rb);
+  return [...arcUV(u1 - rb, v0 + rb, rb, -90, 0, n), ...arcUV(u1 - rt, v1 - rt, rt, 0, 90, n), ...arcUV(u0 + rt, v1 - rt, rt, 90, 180, n), ...arcUV(u0 + rb, v0 + rb, rb, 180, 270, n)]; };
 const prof = (w, zb, zt, r) => rrUV(TX - w, RT + zb, TX + w, RT + zt, r, 6);
-const secPts = u => { const [, w, zb, zt, r] = secAt(u); return on(PY(TY(u)), prof(w, zb, zt, r)); };
+const secPts = u => { const [, w, zb, zt, r] = secAt(u); return on(PY(TY(u)), rr2(TX - w, RT + Math.max(zb, ZS), TX + w, RT + zt, r, zb >= ZS ? r : .2)); };
+const lowPts = u => { const [, w, zb] = secAt(u), z0 = Math.min(zb, ZS); return on(PY(TY(u)), rr2(TX - w, RT + z0, TX + w, RT + ZS, .2, Math.min(2.6, (ZS - z0)/2))); };
 const PANTO_REST = 2.2;
 function pantoGeom(st, pu = PANTO, k = st.panto){
   const h = PANTO_REST + (CWZ - .15 - (ROOF + 2.4) - PANTO_REST)*ease(k), z0 = ROOF + 2.4, P0 = [pu + 8, z0], Hh = [pu - 1, z0 + h];
@@ -1005,9 +1039,12 @@ function trainParts(st, m, K, k){
     for (const sg of [-1, 1]){ const c = [TX + sg*6.4, TY(5.5), RT + 13.6], n = norm([sg*.45, .85, .1]);
       if (vis(n)){ const lit = pw > .5, col = !lit ? '#d9dcdc' : front ? '#fff6c8' : '#e2483d';
         s += shape(discN(c, n, 1.25), col, .5) + (lit ? fill(pd(discN(c, n, 2.4)), col, 'opacity=".35"') : ''); } }
-    // the plough under the nose
-    const plough = [on(PY(TY(1)), prof(4, 4.2, 9.5, 1.6)), on(PY(TY(22)), prof(13, 4.2, 9.5, 2))];
-    KS.put([[TX - 13, TY(22), RT + 4.2], [TX + 13, TY(1), RT + 9.5]], loft(plough[0], plough[1], n => tone(n, SOOT)) + (facing([0,1,0]) ? shape(plough[0], tone([0,1,0], SOOT), .5) : '') + hullInk([...plough[0], ...plough[1]], 1));
+    // the dark lower shield under the front of the nose (its own part, below the shell, ahead of the bogie)
+    { const ul = NOSE.map(r => r[0]).filter(u => u <= NOSE_LOW); let sh = '';
+      for (let i = 0; i < ul.length - 1; i++) sh += loft(lowPts(ul[i]), lowPts(ul[i + 1]), n => tone(n, SHIELD));
+      if (facing([0,1,0])) sh += shape(lowPts(0), tone([0,1,0], SHIELD), .6);
+      if (facing([0,-1,0])) sh += shape(lowPts(NOSE_LOW), tone([0,-1,0], SHIELD), .5);
+      KS.put([[TX - 13.6, TY(NOSE_LOW), RT + 4.6], [TX + 13.6, TY(0), RT + ZS]], act('train', sh + hullInk(ul.flatMap(lowPts), 1.8))); }
     const all = us.flatMap(u => secPts(u));
     s += hullInk(all, 2.2);
     KS.put([[TX - MBW, TY(uEnd), RT + 9.25], [TX + MBW, TY(0), ROOF]], act('train', s));
@@ -1253,14 +1290,14 @@ function objects(st, m, k){
     flowParts(K, cp.out, AMP, sp, k); flowParts(K, cp.back, '#ff8a3d', sp, k); }
   // the far end fades into the paper: only what reaches it (the track, the train, the wires) is masked
   for (const p of K.parts) if (p.box[1][1] > D - 60) p.svg = `<g mask="url(#tgFade)">${p.svg}</g>`;
-  return lcSort(K.parts);
+  return byDepthG(K.parts);
 }
-// what never moves (the fade mask, the fixed shadows, ballast and sleepers) is drawn only when the view turns
+// what never moves (the fade mask, the fixed shadows, ballast and sleepers): the engine's ground layer
 function groundSvg(){ return fadeDefs() + staticShadows() + `<g mask="url(#tgFade)">${trackBed()}</g>`; }
-function scene(st, m, withGround = true){
+function scene(st, m){
   SS = st.s; const k = ease(st.xr || 0);
-  let s = (withGround ? groundSvg() : '') + `<g mask="url(#tgFade)">${trainShadow(st) + railsSvg()}</g>` + objects(st, m, k);
-  if (!document.documentElement.classList.contains('nolabels')) s += lcCallouts(k > .6 ? insideLabels(st) : surfaceLabels(st));
+  let s = `<g mask="url(#tgFade)">${trainShadow(st) + railsSvg()}</g>` + objects(st, m, k);
+  if (labelsShown()) s += lcCallouts(k > .6 ? insideLabels(st) : surfaceLabels(st));
   return s;
 }
 function staticShadows(){
@@ -1383,7 +1420,7 @@ ui = mountFigure({
   size: [W + 46, D, H], center: [(W + 46)/2, D/2], palette: 'cobalt',   // room on the right, so the slab's top clears the numbers
   state: { s: 0, v: 0, dir: 1, panto: 0, pantoT: null, power: 0, voie: false, boarding: false, doors: 0, doorsWant: false, boarded: 0, sig: 0, cur: 0,
     fade: 1, phase: 'idle', train: 0, people: [], agent: null, beep: 0, spark: 0, clock: 0, minute: 13*60 + 36, spawnT: 0, spawned: 0, depT: null },
-  scene,
+  scene, ground: () => groundSvg(),
   stats: st => [
     { label: 'Personnes à bord', value: frInt(st.boarded) },
     { label: 'Courant', value: frInt(Math.round(st.cur/10)*10) + ' A', small: true },
@@ -1403,34 +1440,7 @@ ui = mountFigure({
 // the people already waiting on the platform, looking at the board
 for (const [x, y, a] of [[96, 104, -Math.PI/2], [101, 110, -Math.PI*.6], [90, 140, Math.PI*.9]]) newPerson(ui.st, x, y, { a });
 ui.render();
-/* ---------- fluidité ----------
-   The drawing is two layers: the ground, rebuilt only when the view turns, and the rest, rebuilt every frame. While
-   something moves, the paper grain (a noise the browser recomputes over the whole figure each frame) is replaced by a
-   flat tone of the same brightness; the wobbly lines stay the same, and the grain comes back when it stops. */
-(() => {
-  const art = document.getElementById('art'); let gk = '', G = null, LV = null;
-  ui.render = () => { const st = ui.st, m = PALS[st.pal]; _clipN = 0; document.documentElement.style.setProperty('--accent', m.l);
-    if (!G || !G.isConnected){ art.innerHTML = '<g></g><g></g>'; G = art.firstChild; LV = art.lastChild; gk = ''; }
-    const key = YAW.toFixed(3) + '/' + PITCH.toFixed(3) + '/' + INK_K;
-    if (key !== gk){ G.innerHTML = inkScale(groundSvg()); gk = key; }
-    LV.innerHTML = inkScale(scene(st, m, false));
-    if (ui.drawStats) ui.drawStats(); };
-  let busy = 0, offT = 0, saved = null;
-  const fast = on => { const fl = document.getElementById('hand'); if (!fl) return;
-    if (on && !saved){ const n1 = fl.querySelector('[result="n1"]'), gr = fl.querySelector('[result="grain"]'); if (!n1 || !gr) return;
-      const fd = document.createElementNS('http://www.w3.org/2000/svg', 'feFlood'); fd.setAttribute('flood-color', 'rgb(251,251,251)'); fd.setAttribute('result', 'grain');
-      saved = [n1, gr, fd]; n1.replaceWith(fd); gr.remove(); }
-    else if (!on && saved){ const [n1, gr, fd] = saved; fd.replaceWith(n1); n1.after(gr); saved = null; } };
-  const anim = ui.animate;
-  ui.animate = step => { busy++; clearTimeout(offT); fast(true); let done = false;
-    anim(dt => { const r = step(dt); if (r === false && !done){ done = true; if (--busy <= 0){ busy = 0; offT = setTimeout(() => fast(false), 250); } } return r; }); };
-  // turning the figure by hand is a motion too
-  const fig = document.getElementById('fig');
-  fig.addEventListener('pointerdown', () => { clearTimeout(offT); fast(true); });
-  addEventListener('pointerup', () => { if (!busy) offT = setTimeout(() => fast(false), 250); });
-})();
 xrMount(() => ui, () => '');
-document.getElementById('lblb').addEventListener('click', () => ui.render());          // labels are drawn only when shown
 
 // tests: ?sim=Lever@0.3,Afficher@2&at=9 presses the buttons at those times (s) in a fast simulation, then draws once;
 // ?bench=1 times a full redraw (<html data-bench="ms">); ?shot=1 hides the page around the drawing

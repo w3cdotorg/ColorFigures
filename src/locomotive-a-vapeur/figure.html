@@ -97,31 +97,6 @@ function kit(){ const parts = [];
   return { parts, put,
     bx: (x0, y0, z0, x1, y1, z1, M, sh = tone, w = .8) => put([[x0, y0, z0], [x1, y1, z1]], box(x0, y0, z0, x1, y1, z1, M, sh, w)),
     rd: (a, b, r, M, sh = tone, w = .8, r1 = r, n = 14) => put(rbox(a, b, r, r1), rod(a, b, r, M, sh, w, r1, n)) }; }
-// byDepth for long lists: Array.sort with a comparator that is not transitive (box separation, else centre depth) can
-// put a part far from where it belongs once there are ~100 of them. Here only pairs that overlap on screen get an
-// order (separated boxes first, else depth). The parts caught in a cycle (a strongly connected group, Tarjan) are drawn
-// together, by depth; the groups are drawn in their graph order, so a cycle never pulls an unrelated part out of place.
-function lcSort(parts){
-  const it = parts.filter(Boolean).map(p => { const b = p.box, X = [], Y = [];
-    for (const x of [b[0][0], b[1][0]]) for (const y of [b[0][1], b[1][1]]) for (const z of [b[0][2], b[1][2]]){ const q = P(x, y, z); X.push(q[0]); Y.push(q[1]); }
-    return { p, d: depthOf(boxMid(b)), x0: Math.min(...X), x1: Math.max(...X), y0: Math.min(...Y), y1: Math.max(...Y), out: [], i: -1, low: 0, on: false }; });
-  for (let i = 0; i < it.length; i++) for (let j = i + 1; j < it.length; j++){ const a = it[i], b = it[j];
-    if (a.x1 <= b.x0 || b.x1 <= a.x0 || a.y1 <= b.y0 || b.y1 <= a.y0) continue;
-    // every axis the boxes are separated along must agree; if two disagree, they do not really overlap on screen
-    let s = 0, clash = false;
-    for (let k = 0; k < 3; k++){ if (Math.abs(CAM_V[k]) < 1e-3) continue; const A = a.p.box, B = b.p.box, v = A[1][k] <= B[0][k] + 1e-6 ? (CAM_V[k] >= 0 ? -1 : 1) : B[1][k] <= A[0][k] + 1e-6 ? (CAM_V[k] >= 0 ? 1 : -1) : 0;
-      if (v && s && v !== s) clash = true; if (v) s = v; }
-    if (clash) continue;
-    if (!s) s = a.d <= b.d ? -1 : 1;
-    if (s < 0) a.out.push(b); else b.out.push(a); }
-  let n = 0; const stk = [], comps = [];
-  const visit = v => { v.i = v.low = n++; stk.push(v); v.on = true;
-    for (const w of v.out){ if (w.i < 0){ visit(w); v.low = Math.min(v.low, w.low); } else if (w.on) v.low = Math.min(v.low, w.i); }
-    if (v.low === v.i){ const c = []; let w; do { w = stk.pop(); w.on = false; c.push(w); } while (w !== v); comps.push(c); } };
-  for (const v of it.slice().sort((a, b) => a.d - b.d)) if (v.i < 0) visit(v);
-  // Tarjan finishes a group after every group it leads to, so the reversed list is the drawing order
-  return comps.reverse().map(c => c.sort((a, b) => a.d - b.d).map(v => v.p.svg).join('')).join('');
-}
 // a cable cut into short pieces, each with its own box, so it sorts with the solids it passes
 function cableParts(K, pts, col, w, L = 3){
   for (let i = 0; i < pts.length - 1; i++){ const a = pts[i], b = pts[i + 1], n = Math.max(1, Math.ceil(Math.hypot(...sub(b, a)) / L));
@@ -240,7 +215,7 @@ function towerSvg(st){
   K.bx(TWX - 11, TWY - 11, LEGZ, TWX + 11, TWY + 11, TK0, TIMBER);
   K.bx(TWX - 1.7, TWY - 1.7, 0, TWX + 1.7, TWY + 1.7, 2.2, SOOT);
   K.rd([TWX, TWY, 2.2], [TWX, TWY, LEGZ], .9, SOOT);
-  return lcSort(K.parts) + tankSvg(st);
+  return byDepthG(K.parts) + tankSvg(st);
 }
 function tankSvg(st){
   const ring = (z, r, n = 40) => on(PZ(z), ellUV(TWX, TWY, r, r, n));
@@ -651,7 +626,7 @@ function trainShadow(){
 // On a large screen the drawing grows past its 760 px width; the pills grow less, so they stay close to the size
 // of the buttons' text.
 function lcCallouts(items){
-  if (!items.length) return '';
+  if (!items.length || !labelsShown()) return '';
   const svgEl = document.getElementById('fig'), vb = svgEl.viewBox.baseVal, ctm = svgEl.getScreenCTM();
   const k = INK_K*Math.min(1, Math.pow(760/(svgEl.clientWidth || 760), .75)), u = window.LBL_U ? LBL_U() : 0, fs = u ? 10*u : 8.6*k, hgt = u ? 17*u : fs*1.8, gap = hgt + (u ? 3*u : 3*k);
   const below = id => { const el = document.getElementById(id); if (!el || !ctm || u) return -1e9;
@@ -721,11 +696,11 @@ function trainList(st, m, xr){
 function scene(st, m){
   SS = st.s; const k = ease(st.xr || 0);
   let s = `<defs><filter id="lcGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="${f(1.2*INK_K)}"/></filter></defs>`;
-  s += towerShadow() + pileShadow(st) + trackBed() + trainShadow() + railsSvg();
+  s += pileShadow(st) + trainShadow() + railsSvg();                   // the tower's shadow, ballast and sleepers: the ground layer
   const TBOX = [[-1, TWY - 16, 0], [30, TWY + 16, 78]], RBOX = [[30, 0, 0], [72.5, D, 80]];
-  const objs = lcSort([{ box: TBOX, svg: towerSvg(st) }, { box: RBOX, svg: lcSort(trainList(st, m, false)) },
+  const objs = byDepthG([{ box: TBOX, svg: towerSvg(st) }, { box: RBOX, svg: byDepthG(trainList(st, m, false)) },
     { box: [[78, PILE.y0 - 1.2, 0], [91.2, PILE.y1 + 1.2, 22]], svg: act('pile', pileSvg(st)) }, ...logItems(st, false)]);
-  if (k > 0) s += `<g opacity="${f(1 - .62*k)}">${objs}</g><g opacity="${f(k)}">${lcSort([{ box: TBOX, svg: towerMech(st) }, { box: RBOX, svg: lcSort(trainList(st, m, true)) }, ...logItems(st, false)])}</g>`;
+  if (k > 0) s += `<g opacity="${f(1 - .62*k)}">${objs}</g><g opacity="${f(k)}">${byDepthG([{ box: TBOX, svg: towerMech(st) }, { box: RBOX, svg: byDepthG(trainList(st, m, true)) }, ...logItems(st, false)])}</g>`;
   else s += objs;
   SS = st.s;
   s += lcCallouts(k > .6 ? insideLabels(st) : surfaceLabels(st));
@@ -833,7 +808,7 @@ ui = mountFigure({
   size: [W, D, H], palette: 'tomato', credit: true,
   state: { s: 0, water: 1600, wood: .15, pile: 1, tower: CAP_T, fire: .25, p: 3.75, spout: 0, hatch: 0, valve: 0, flow: 0, fill: null, fillT: 0,
     loadQ: 0, loadT: 0, feedQ: 0, feedT: 0, door: 0, logs: [], puffs: [], mv: null, go: null, whistle: 0, safety: 0, chuff: 0, clock: 0, seq: 0, pump: false },
-  scene,
+  scene, ground: () => towerShadow() + trackBed(),
   stats: st => [
     { label: 'Eau du tender', value: frInt(Math.round(st.water/10)*10) + ' L' },
     { label: 'Bois', value: fr1(st.wood*CAP_B) + ' t', small: true },
