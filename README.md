@@ -9,6 +9,7 @@ de l'intérieur et voir en fonctionnement. Chaque figure est une page web autono
 | Fig. | Figure | Étapes et mécanisme |
 | --- | --- | --- |
 | 01 | [Locomotive à vapeur](https://w3cdotorg.github.io/ColorFigures/figures/locomotive-a-vapeur.html) | Faire le plein d'eau au château d'eau, charger le bois, nourrir le feu, siffler et partir, revenir. En transparence : foyer, tubes à fumée, régulateur, pistons, injecteur, caisse à eau du tender, réservoir et flotteur du château d'eau. |
+| 02 | [TGV au départ de Montparnasse](https://w3cdotorg.github.io/ColorFigures/figures/tgv-montparnasse.html) | Lever le pantographe, afficher la voie (embarquement), fermer les portes, démarrer, faire venir la rame suivante. En transparence : trajet du courant de la sous-station à la caténaire, au pantographe et aux moteurs, retour par les rails ; filtre, transformateur, onduleurs, moteurs de traction, cabine ; salles basse et haute de la voiture Duplex. |
 
 ## Organisation
 
