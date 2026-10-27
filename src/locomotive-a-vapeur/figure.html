@@ -648,10 +648,12 @@ function trainShadow(){
 // pills in two columns pinned to the frame's edges (the scene is long, so the core helper finds no room beside it):
 // the half of the labels further left on screen goes left, under the buttons; the rest right, under the numbers.
 // Each column is sorted top to bottom so leaders never cross. On a phone they are numbered badges, as in the core.
+// On a large screen the drawing grows past its 760 px width; the pills grow less, so they stay close to the size
+// of the buttons' text.
 function lcCallouts(items){
   if (!items.length) return '';
-  const k = INK_K, u = window.LBL_U ? LBL_U() : 0, fs = u ? 10*u : 8.6*k, hgt = u ? 17*u : fs*1.8, gap = hgt + (u ? 3*u : 3*k);
   const svgEl = document.getElementById('fig'), vb = svgEl.viewBox.baseVal, ctm = svgEl.getScreenCTM();
+  const k = INK_K*Math.min(1, Math.pow(760/(svgEl.clientWidth || 760), .75)), u = window.LBL_U ? LBL_U() : 0, fs = u ? 10*u : 8.6*k, hgt = u ? 17*u : fs*1.8, gap = hgt + (u ? 3*u : 3*k);
   const below = id => { const el = document.getElementById(id); if (!el || !ctm || u) return -1e9;
     const r = el.getBoundingClientRect(); return new DOMPoint(r.left, r.bottom + 10).matrixTransform(ctm.inverse()).y + hgt/2; };
   const pts = items.map(it => { const [X, Y] = P(...it.at); return { ...it, X, Y }; }).sort((a, b) => a.X - b.X), half = Math.ceil(pts.length/2);
@@ -877,5 +879,38 @@ xrMount(() => ui, () => '');
     if (mwl) mwl.insertAdjacentHTML('beforebegin', '<a href="../">← Toutes les figures</a> · '); }
   addEventListener('load', () => setTimeout(() => {
     for (const [c, t] of [['.zm', 'Dézoomer'], ['.zp', 'Taille normale'], ['.zi', 'Zoomer']]){ const e = document.querySelector(c); if (e) e.setAttribute('aria-label', t); } }, 0));
+})();
+/* ---------- grand écran et plein écran ----------
+   The page is 760 px wide by default: on a large window the figure grows with the window's height (so it never
+   needs scrolling), up to 1800 px. A button beside the zoom chip (or the F key) puts the figure in full screen,
+   without the title and the settings, and the figure then fills the screen. */
+(() => {
+  const css = document.createElement('style');
+  css.textContent = `@media (min-width:561px){
+      :root{--figw:max(760px,min(1800px,calc((100vh - 250px)*1.3333)))}
+      body>header,.stage,#fig,.controls,.made-with,.lgd{max-width:var(--figw)!important}
+      html.fs{--figw:min(calc(100vw - 32px),calc((100vh - 24px)*1.3333))}
+      html.fs body{padding-top:10px;padding-bottom:10px}
+      html.fs body>header,html.fs .controls,html.fs .made-with{display:none!important}}
+    @media (min-width:1800px) and (min-height:1050px){.actions,#stats,.vset,.zchip{zoom:1.3}}`;
+  css.textContent += `
+    .zchip .fsb{display:inline-grid;place-items:center}
+    .fsb svg{width:12px;height:12px}`;
+  document.head.appendChild(css);
+  let rt = 0; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => ui.render(), 150); });   // label columns sit under the buttons
+  const root = document.documentElement, enter = root.requestFullscreen || root.webkitRequestFullscreen;
+  if (!enter) return;                                                  // iPhone Safari: no full screen for pages
+  const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const toggle = () => isFs() ? (document.exitFullscreen || document.webkitExitFullscreen).call(document) : enter.call(root);
+  const icon = out => `<svg viewBox="0 0 16 16" fill="none" stroke="#231e16" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${out
+    ? 'M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5' : 'M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5'}"/></svg>`;
+  let btn = null;
+  const sync = () => { root.classList.toggle('fs', isFs());
+    if (btn){ btn.innerHTML = icon(isFs()); btn.title = isFs() ? 'Quitter le plein écran (F)' : 'Plein écran (F)'; btn.setAttribute('aria-label', btn.title); }
+    dispatchEvent(new Event('resize')); requestAnimationFrame(() => ui.render()); };   // labels follow the new size
+  document.addEventListener('fullscreenchange', sync); document.addEventListener('webkitfullscreenchange', sync);
+  addEventListener('load', () => setTimeout(() => { const chip = document.querySelector('.zchip'); if (!chip) return;
+    btn = document.createElement('button'); btn.type = 'button'; btn.className = 'fsb'; btn.onclick = toggle; chip.prepend(btn); sync(); }, 0));
+  addEventListener('keydown', e => { if (e.key.toLowerCase() !== 'f' || e.metaKey || e.ctrlKey || e.altKey || /input|textarea/i.test(e.target.tagName)) return; e.preventDefault(); toggle(); });
 })();
 </script></body></html>
