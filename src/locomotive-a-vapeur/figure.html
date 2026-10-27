@@ -1,0 +1,881 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Locomotive à vapeur</title></head><body>
+<script src="core.js"></script>
+<script>
+/* Locomotive à vapeur 4-4-0 « American » (années 1860, au bois) qui fait le plein d'eau et de bois au château d'eau.
+   Comment ça marche vraiment (où est chaque matière après chaque étape) :
+   1. Faire le plein d'eau : la locomotive est arrêtée avec la trappe (trou d'homme) du tender juste sous la manche.
+      On ouvre le couvercle, on abaisse la manche (son contrepoids remonte le long de la cuve), on tire la corde de la
+      vanne : eau de la cuve -> vanne -> manche -> chaussette en toile -> trappe -> caisse à eau en U du tender. Le niveau
+      de la cuve baisse (flotteur -> indicateur), celui du tender monte. On ferme la vanne, on relève la manche, on
+      referme. La pompe remplit de nouveau la cuve par la colonne d'arrivée.
+   2. Charger le bois : les bûches du tas (rangé entre ses piquets le long de la voie) passent par-dessus la paroi du
+      tender et tombent dans la soute à bois, au milieu du U.
+   3. Nourrir le feu : le chauffeur ouvre la porte du foyer et y jette des bûches prises à l'avant de la soute. Les gaz
+      chauds traversent la chaudière par les tubes à fumée vers la boîte à fumée et la cheminée (pare-étincelles).
+      L'eau autour du foyer et des tubes bout, la vapeur s'accumule dans le dôme : la pression monte. L'injecteur, sous
+      la cabine, pousse l'eau du tender dans la chaudière par le clapet d'alimentation.
+   4. Siffler et partir : le régulateur, dans le dôme, laisse passer la vapeur -> tuyau de prise de vapeur -> boîte à
+      fumée -> tuyaux de vapeur -> boîtes à tiroir -> cylindres. Le piston pousse sa tige, la crosse glisse entre les
+      glissières, la bielle motrice fait tourner la roue motrice avant, la bielle d'accouplement entraîne l'arrière (les
+      deux côtés sont calés à 90°). La vapeur usée sort par l'échappement sous la cheminée : un « tchou » par quart de
+      tour. Le trajet consomme de l'eau et le feu baisse.
+   5. Revenir au château d'eau : marche arrière jusqu'à l'arrêt, trappe de nouveau sous la manche.
+   Chiffres (The General, 1855) : roues motrices 60 in (1,52 m), tender 2 000 gal (7 500 L) et 2 t de bois.
+   Pièces (chacune tenue par une autre) :
+   VOIE        ballast . traverses . selles . deux rails (écartement 1 435 mm)
+   LOCO        longerons . foyer . corps cylindrique (bandes laiton) . boîte à fumée et sa porte . cheminée pare-étincelles .
+               dôme (sifflet, soupapes) . sablière . cloche et sa fourche . phare et son support . mains courantes . tabliers .
+               cabine (plancher, parois, fenêtres, toit, lanterneau) . porte du foyer . manomètre . niveau d'eau .
+               levier du régulateur . levier de changement de marche . sièges . traverse avant . chasse-bestiaux
+   MÉCANISME   cylindres . boîtes à tiroir . selle . support et glissières . crosses . tiges de piston . bielles motrices .
+               bielles d'accouplement . manetons . roues motrices à contrepoids . essieux . bogie (roues, longerons, pivot)
+   DEDANS      foyer en cuivre . grille . bûches en feu . tubes à fumée . eau de la chaudière . régulateur et sa tringle .
+               tuyau de prise de vapeur . tuyaux de vapeur . tuyère d'échappement . pistons . tiroirs . injecteur . boyau .
+               tuyau d'alimentation . clapet
+   TENDER      bogies (roues pleines, longerons, boîtes d'essieu, traverses) . longrines . caisse à eau en U . trappe et
+               couvercle . soute à bois . planche avant . frein à vis . barre d'attelage . tôle de liaison
+   CHÂTEAU D'EAU semelles . 4 poteaux . moises . croix de Saint-André . plancher . cuve en douelles cerclée . toit conique .
+               indicateur de niveau . flotteur . colonne d'arrivée . vanne . manche et chaussette . potence, poulie,
+               corde et contrepoids . corde de vanne
+   TAS DE BOIS piquets . bûches */
+
+/* ---------- géométrie (x = profondeur, y = le long de la voie, z = haut ; 1 unité = 10 cm) ---------- */
+const W = 94, D = 212, H = 80;
+const TX = 58, HG = 7.18, BAL = 2.4, TIE = 4, RT = 5.6;              // axe de la voie, demi-écartement, ballast, traverses, rail
+const TY0 = 16, LOFF = 57, RUN = 42;                                   // arrière du tender à l'arrêt ; u = 0 de la loco ; un départ
+const RD = 7.5, AZ = RT + RD, DRV = [10, 34], CRK = 3, MRL = 18;       // roues motrices, essieux, manivelle, bielle motrice
+const RBG = 3.8, BAZ = RT + RBG, BOG = [60, 70];                       // bogie
+const BZ = 27.5, BR = 5.8, SBR = 6.2, BTOP = BZ + BR, SBTOP = BZ + SBR; // chaudière, boîte à fumée
+const CABF = 21.2, CABT = 38.5;
+const CYX = 11, CYR = 3, CY0 = 61, CY1 = 71;                           // cylindres
+const WX0 = 6.4, WX1 = 7.9;                                            // faces des roues |dx|
+const RTW = 4.2, TAZ = RT + RTW, TRK = [12, 42], TAX = [4.5, 19.5, 34.5, 49.5];
+const TDK = 19, TTOP = 30.5, TLEN = 54, HV = 8, HRAD = 2.2, WMAX = 14;
+const TWX = 15, TWY = TY0 + HV, TKR = 14, TK0 = 45, TK1 = 67, LEGZ = 43.5;
+const PIV = [TWX + TKR + 1.2, TWY, 46.5];                              // charnière de la manche
+const SPL = Math.hypot(TX - PIV[0], PIV[2] - 34.5), SP_UP = 65, SP_DN = Math.atan2(34.5 - PIV[2], TX - PIV[0]) * 180/Math.PI;
+const PUL = [38, TWY, 69.3], PULR = 1.2, CWL = 32;                    // poulie de la potence, longueur de corde
+const PILE = { x0: 79, x1: 90, y0: 34, y1: 68, h: 19.6 };
+const LOGR = 1.3, LOGL = 11;
+const CAP_W = 7500, CAP_T = 13000, CAP_B = 2.0;                        // L dans le tender, L dans la cuve, t de bois
+
+const IRON = { l:'#8597a3', m:'#62737f', d:'#3d4a54' }, BRASS = { l:'#f2cf6b', m:'#cfa845', d:'#8d6d24' };
+const STEEL = { l:'#e3e7e9', m:'#b3babe', d:'#7d868b' }, TYRE = { l:'#9aa0a4', m:'#73797d', d:'#4b5054' };
+const SOOT = { l:'#625d59', m:'#47423e', d:'#2b2724' }, TIMBER = { l:'#c9ad84', m:'#a68a64', d:'#735d45' };
+const STAVE = { l:'#c49766', m:'#9e7548', d:'#684b2d' }, TIN = { l:'#b4b0a8', m:'#8d8981', d:'#5d5a54' };
+const BARK = { l:'#9c6c43', m:'#7b5230', d:'#4d331d' }, LOGEND = '#ecca93', LOGRING = '#b98a52';
+const BALLAST = { l:'#d2cabb', m:'#b2aa99', d:'#867e70' }, SLEEPER = { l:'#937255', m:'#755a40', d:'#4c3a29' };
+const RAILM = { l:'#c7ccce', m:'#959b9f', d:'#62686c' }, CANVAS = { l:'#dccb9f', m:'#bba878', d:'#85754f' };
+const COPPER = { l:'#f0a875', m:'#d0844f', d:'#94552c' }, WATERM = { l:'#9fd2f0', m:'#5aa9da', d:'#2f78ad' };
+const PLANK = { l:'#b98d5e', m:'#9a7146', d:'#6a4c2d' }, STONE = { l:'#d9d3c6', m:'#bcb5a6', d:'#8f887a' }, GLASS = '#cfe9f0';
+
+/* ---------- petits outils ---------- */
+let SS = 0;                                                            // avance du train (st.s) pour le dessin en cours
+const LY = u => TY0 + LOFF + SS + u, TYv = v => TY0 + SS + v;
+const Lp = (dx, u, z) => [TX + dx, LY(u), z], Tp = (dx, v, z) => [TX + dx, TYv(v), z];
+const lerp3 = (a, b, t) => a.map((v, i) => v + (b[i] - v)*t);
+const rbox = (a, b, r, r1 = r) => { const d = norm(sub(b, a)), R = Math.max(r, r1), e = d.map(v => R*Math.sqrt(Math.max(0, 1 - v*v)));
+  return [[0,1,2].map(i => Math.min(a[i], b[i]) - e[i]), [0,1,2].map(i => Math.max(a[i], b[i]) + e[i])]; };
+const bboxOf = pts => [[0,1,2].map(i => Math.min(...pts.map(p => p[i]))), [0,1,2].map(i => Math.max(...pts.map(p => p[i])))];
+const xs = (sg, a, b) => { const p = TX + sg*a, q = TX + sg*b; return [Math.min(p, q), Math.max(p, q)]; };
+const mw = w => `style="stroke-width:${f(w)}"`;                      // trait en unités du modèle (pas remis à l'échelle)
+const strk = (pts, col, w, cap = 'round') => `<path d="${pd(pts, false)}" fill="none" stroke="${col}" ${mw(w)} stroke-linecap="${cap}" stroke-linejoin="round"/>`;
+const cable = (pts, col, w) => strk(pts, INK, w + .45) + strk(pts, col, w);
+const fr1 = v => v.toFixed(1).replace('.', ',');
+const frInt = v => Math.round(v).toLocaleString('fr-FR');
+const spoutAng = st => (SP_UP + (SP_DN - SP_UP)*ease(st.spout)) * Math.PI/180;
+const spoutPt = (st, t) => { const a = spoutAng(st); return [PIV[0] + SPL*t*Math.cos(a), PIV[1], PIV[2] + SPL*t*Math.sin(a)]; };
+const woodTop = st => TDK + WMAX*st.wood;
+const tWaterZ = st => TDK + .3 + (TTOP - TDK - 1)*st.water/CAP_W;
+const towerWaterZ = st => TK0 + .4 + 21*st.tower/CAP_T;
+
+// a bag of sorted parts: put(box, svg); bx / rd add a box or a rod with its box
+function kit(){ const parts = [];
+  const put = (b, svg) => { if (svg) parts.push({ box: b, svg }); };
+  return { parts, put,
+    bx: (x0, y0, z0, x1, y1, z1, M, sh = tone, w = .8) => put([[x0, y0, z0], [x1, y1, z1]], box(x0, y0, z0, x1, y1, z1, M, sh, w)),
+    rd: (a, b, r, M, sh = tone, w = .8, r1 = r, n = 14) => put(rbox(a, b, r, r1), rod(a, b, r, M, sh, w, r1, n)) }; }
+// byDepth for long lists: Array.sort with a comparator that is not transitive (box separation, else centre depth) can
+// put a part far from where it belongs once there are ~100 of them. Here only pairs that overlap on screen get an
+// order (separated boxes first, else depth). The parts caught in a cycle (a strongly connected group, Tarjan) are drawn
+// together, by depth; the groups are drawn in their graph order, so a cycle never pulls an unrelated part out of place.
+function lcSort(parts){
+  const it = parts.filter(Boolean).map(p => { const b = p.box, X = [], Y = [];
+    for (const x of [b[0][0], b[1][0]]) for (const y of [b[0][1], b[1][1]]) for (const z of [b[0][2], b[1][2]]){ const q = P(x, y, z); X.push(q[0]); Y.push(q[1]); }
+    return { p, d: depthOf(boxMid(b)), x0: Math.min(...X), x1: Math.max(...X), y0: Math.min(...Y), y1: Math.max(...Y), out: [], i: -1, low: 0, on: false }; });
+  for (let i = 0; i < it.length; i++) for (let j = i + 1; j < it.length; j++){ const a = it[i], b = it[j];
+    if (a.x1 <= b.x0 || b.x1 <= a.x0 || a.y1 <= b.y0 || b.y1 <= a.y0) continue;
+    // every axis the boxes are separated along must agree; if two disagree, they do not really overlap on screen
+    let s = 0, clash = false;
+    for (let k = 0; k < 3; k++){ if (Math.abs(CAM_V[k]) < 1e-3) continue; const A = a.p.box, B = b.p.box, v = A[1][k] <= B[0][k] + 1e-6 ? (CAM_V[k] >= 0 ? -1 : 1) : B[1][k] <= A[0][k] + 1e-6 ? (CAM_V[k] >= 0 ? 1 : -1) : 0;
+      if (v && s && v !== s) clash = true; if (v) s = v; }
+    if (clash) continue;
+    if (!s) s = a.d <= b.d ? -1 : 1;
+    if (s < 0) a.out.push(b); else b.out.push(a); }
+  let n = 0; const stk = [], comps = [];
+  const visit = v => { v.i = v.low = n++; stk.push(v); v.on = true;
+    for (const w of v.out){ if (w.i < 0){ visit(w); v.low = Math.min(v.low, w.low); } else if (w.on) v.low = Math.min(v.low, w.i); }
+    if (v.low === v.i){ const c = []; let w; do { w = stk.pop(); w.on = false; c.push(w); } while (w !== v); comps.push(c); } };
+  for (const v of it.slice().sort((a, b) => a.d - b.d)) if (v.i < 0) visit(v);
+  // Tarjan finishes a group after every group it leads to, so the reversed list is the drawing order
+  return comps.reverse().map(c => c.sort((a, b) => a.d - b.d).map(v => v.p.svg).join('')).join('');
+}
+// a cable cut into short pieces, each with its own box, so it sorts with the solids it passes
+function cableParts(K, pts, col, w, L = 3){
+  for (let i = 0; i < pts.length - 1; i++){ const a = pts[i], b = pts[i + 1], n = Math.max(1, Math.ceil(Math.hypot(...sub(b, a)) / L));
+    for (let j = 0; j < n; j++){ const p = lerp3(a, b, j/n), q = lerp3(a, b, (j + 1)/n); K.put(rbox(p, q, w/2), cable([p, q], col, w)); } } }
+
+/* ---------- roues, bielles, bûches ---------- */
+// a wheel on an axle along x: tyre band, and on the face toward the viewer the tyre ring, spokes (the gaps show what is
+// behind), counterweight and hub. nsp = 0: a plate wheel.
+function wheelX(xa, xb, y, z, r, M, ang, nsp, cw){
+  const A = on(PX(xa), ellUV(y, z, r, r, 30)), B = on(PX(xb), ellUV(y, z, r, r, 30));
+  let s = loft(A, B, n => tone(n, TYRE));
+  const fx = facing([1,0,0]) ? xb + .02 : facing([-1,0,0]) ? xa - .02 : null;
+  if (fx != null){
+    const nx = fx > xb ? 1 : -1, rg = rr => on(PX(fx), ellUV(y, z, rr, rr, 30)), pt = (rr, a) => [fx, y + rr*Math.cos(a), z + rr*Math.sin(a)];
+    const ri = r*.85, tc = tone([nx,0,0], TYRE), hc = tone([nx,0,0], M);
+    s += `<path d="${pd(rg(r))}${pd(rg(ri).reverse())}" fill="${tc}" fill-rule="evenodd"/>`;
+    if (!nsp) s += fill(pd(rg(ri)), hc) + ink(pd(rg(r*.55)), .5);
+    else {
+      s += `<path d="${pd(rg(ri))}${pd(rg(ri*.88).reverse())}" fill="${hc}" fill-rule="evenodd"/>`;
+      let sk = ''; for (let i = 0; i < nsp; i++){ const a = ang + (i + .5)*2*Math.PI/nsp; sk += pd([pt(r*.2, a), pt(ri*.9, a)], false); }
+      const sw = r*.1;
+      s += `<path d="${sk}" fill="none" stroke="${INK}" ${mw(sw + .4)}/><path d="${sk}" fill="none" stroke="${hc}" ${mw(sw)}/>`;
+      if (cw){ const pts = [];
+        for (let i = 0; i <= 8; i++) pts.push(pt(ri*.88, ang + Math.PI - .6 + 1.2*i/8));
+        for (let i = 8; i >= 0; i--) pts.push(pt(r*.42, ang + Math.PI - .6 + 1.2*i/8));
+        s += shape(pts, hc, .6); }
+      s += ink(pd(rg(ri*.88)), .6);
+    }
+    s += ink(pd(rg(r)), .9) + ink(pd(rg(ri)), .6);
+    s += shape(on(PX(fx + nx*.03), ellUV(y, z, r*.2, r*.2, 14)), hc, .7) + shape(on(PX(fx + nx*.05), ellUV(y, z, r*.08, r*.08, 10)), tone([nx,0,0], STEEL), .5);
+    if (cw) s += shape(on(PX(fx + nx*.04), ellUV(y + CRK*Math.cos(ang), z + CRK*Math.sin(ang), r*.19, r*.19, 12)), hc, .6);
+  }
+  return s + hullInk([...A, ...B], 1.4);
+}
+// a flat bar (a rod of the running gear) from (y0,z0) to (y1,z1), between x = xa and xb, half-depth hw
+function barYZ(y0, z0, y1, z1, xa, xb, hw, M, w = .8){
+  const d = norm([0, y1 - y0, z1 - z0]), e = [0, -d[2]*hw, d[1]*hw];
+  const q = x => [[x, y0 + e[1], z0 + e[2]], [x, y1 + e[1], z1 + e[2]], [x, y1 - e[1], z1 - e[2]], [x, y0 - e[1], z0 - e[2]]];
+  const Q0 = q(xa), Q1 = q(xb), cen = avg([...Q0, ...Q1]), F = [[[-1,0,0], Q0], [[1,0,0], Q1]];
+  for (let i = 0; i < 4; i++){ const qd = [Q0[i], Q0[(i+1)%4], Q1[(i+1)%4], Q1[i]];
+    let n = norm(cross(sub(qd[1], qd[0]), sub(qd[3], qd[0]))); if (dot(n, sub(avg(qd), cen)) < 0) n = n.map(v => -v); F.push([n, qd]); }
+  return F.filter(([n]) => vis(n)).map(([n, qd]) => face(pd(qd), tone(n, M))).join('') + hullInk([...Q0, ...Q1], w);
+}
+// a log between two points: bark round the side, a pale cut end with its rings on the end toward the viewer
+function logSvg(a, b, r = LOGR){
+  const d = norm(sub(b, a)), u = norm(cross(d, Math.abs(d[2]) < .9 ? [0,0,1] : [1,0,0])), v = cross(d, u);
+  const ring = (p, rr) => Array.from({length:10}, (_, i) => { const t = i/10*2*Math.PI; return [0,1,2].map(k => p[k] + u[k]*Math.cos(t)*rr + v[k]*Math.sin(t)*rr); });
+  const A = ring(a, r), B = ring(b, r), toB = vis(d), cc = toB ? b : a, cap = toB ? B : A;
+  let s = loft(A, B, nr => tone(nr, BARK));
+  if (vis(toB ? d : d.map(x => -x))) s += fill(pd(cap), LOGEND) + `<path d="${pd(ring(cc, r*.55))}" fill="none" stroke="${LOGRING}" ${mw(.18)}/>` + ink(pd(cap), .5);
+  return s + hullInk([...A, ...B], .9);
+}
+// the half of a horizontal ring (around the boiler axis, in the plane y) that faces the viewer, as a band
+function bandY(y, r, col, w){ let s = '', seg = [];
+  const flush = () => { if (seg.length > 1) s += strk(seg, INK, w + .4, 'butt') + strk(seg, col, w, 'butt'); seg = []; };
+  for (let i = 0; i <= 40; i++){ const a = i/40*2*Math.PI, n = [Math.cos(a), 0, Math.sin(a)];
+    if (vis(n)) seg.push([TX + r*n[0], y, BZ + r*n[2]]); else flush(); }
+  flush(); return s; }
+// a turned part round a vertical axis at (x, y), from a profile [[z, r], ...] bottom to top
+function lathe(x, y, prof, M, w = 1.1, n = 22){
+  const R = prof.map(([z, r]) => on(PZ(z), ellUV(x, y, Math.max(r, .05), Math.max(r, .05), n))); let s = '';
+  for (let i = 0; i < R.length - 1; i++) s += loft(R[i], R[i + 1], nr => tone(nr, M));
+  s += fill(pd(R[R.length - 1]), tone([0,0,1], M));
+  return s + hullInk(R.flat(), w);
+}
+// a box seen from inside: far walls, the contents, then the near walls see-through
+function hollowBox(x0, y0, z0, x1, y1, z1, M, contents, farOp = 1, nearOp = .3, w = .7){
+  const F = [[[0,1,0], [[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]]], [[1,0,0], [[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[x1,y0,z1]]],
+    [[0,-1,0], [[x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1]]], [[-1,0,0], [[x0,y0,z0],[x0,y1,z0],[x0,y1,z1],[x0,y0,z1]]],
+    [[0,0,1], [[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]]], [[0,0,-1], [[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0]]]];
+  const far = F.filter(([n]) => !vis(n)).map(([n, q]) => fill(pd(q), toneI(n.map(v => -v), M)) + ink(pd(q), w*.6)).join('');
+  const near = F.filter(([n]) => vis(n)).map(([n, q]) => fill(pd(q), tone(n, M)) + ink(pd(q), w)).join('');
+  return `<g opacity="${farOp}">${far}</g>${contents}<g opacity="${nearOp}">${near}</g>`;
+}
+const glass = (pts, op = .3) => fill(pd(pts), CLEAR.l, `opacity="${op}"`);
+const txSide = (x, y, z, str, size, col, sg) => `<text transform="${txM(P(x, y, z), Dv(0, -sg, 0), Dv(0, 0, -1))}" font-size="${size}" fill="${col}" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-weight="700" letter-spacing=".1em">${str}</text>`;
+const txFront = (x, y, z, str, size, col, sg) => `<text transform="${txM(P(x, y, z), Dv(sg, 0, 0), Dv(0, 0, -1))}" font-size="${size}" fill="${col}" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-weight="700">${str}</text>`;
+
+/* ---------- la voie ---------- */
+const GRAVEL = (() => { let sd = 7; const r = () => (sd = (sd*16807) % 2147483647) / 2147483647, o = [];
+  for (let i = 0; i < 420; i++) o.push([TX - 14.5 + 29*r(), 1 + (D - 2)*r(), r()]); return o; })();
+function trackBed(){
+  const pr = [[TX - 15, 0], [TX + 15, 0], [TX + 12.8, BAL], [TX - 12.8, BAL]], A = on(PY(0), pr), B = on(PY(D), pr);
+  let s = loft(A, B, n => tone(n, BALLAST));
+  if (facing([0,-1,0])) s += shape(A, tone([0,-1,0], BALLAST), .8);
+  if (facing([0,1,0])) s += shape(B, tone([0,1,0], BALLAST), .8);
+  let g = '';
+  for (const [x, y, k] of GRAVEL){ const z = Math.abs(x - TX) < 12.8 ? BAL + .02 : BAL*(15 - Math.abs(x - TX))/2.2 + .02;
+    if (Math.abs(x - TX) >= 12.8 && !facing([Math.sign(x - TX), 0, .9])) continue;
+    const q = .35 + .3*k; g += pd([[x - q, y, z], [x + q, y, z], [x, y + q, z]]); }
+  s += fill(g, BALLAST.d, 'opacity=".55"') + hullInk([...A, ...B], 1.6);
+  const sl = [];
+  for (let y = 3; y < D - 1; y += 6){
+    let t = box(TX - 12.5, y - 1.2, BAL, TX + 12.5, y + 1.2, TIE, SLEEPER, tone, .7);
+    for (const sg of [-1, 1]) t += fill(pd([[TX + sg*HG - 1.1, y - .9, TIE + .02], [TX + sg*HG + 1.1, y - .9, TIE + .02], [TX + sg*HG + 1.1, y + .9, TIE + .02], [TX + sg*HG - 1.1, y + .9, TIE + .02]]), '#4a4642');
+    sl.push({ box: [[TX - 12.5, y - 1.2, BAL], [TX + 12.5, y + 1.2, TIE]], svg: t }); }
+  return s + byDepth(sl);
+}
+function railsSvg(){
+  return byDepth([-1, 1].map(sg => { const xc = TX + sg*HG;
+    return { box: [[xc - .65, 0, TIE], [xc + .65, D, RT]], svg: box(xc - .65, 0, TIE, xc + .65, D, TIE + .3, RAILM, tone, .5)
+      + box(xc - .18, 0, TIE + .3, xc + .18, D, RT - .6, RAILM, tone, .4) + box(xc - .36, 0, RT - .6, xc + .36, D, RT, RAILM, tone, .8) }; }));
+}
+
+/* ---------- le château d'eau ---------- */
+const CORN = [[1,1],[1,-1],[-1,-1],[-1,1]];
+const legAt = (sx, sy, z) => { const t = z/LEGZ; return [TWX + sx*(12.5 - 2.5*t), TWY + sy*(12.5 - 2.5*t), z]; };
+function towerSvg(st){
+  const K = kit();
+  for (const [sx, sy] of CORN){ const b = legAt(sx, sy, 0);
+    K.bx(b[0] - 1.6, b[1] - 1.6, 0, b[0] + 1.6, b[1] + 1.6, 1, STONE);
+    K.rd(legAt(sx, sy, 1), legAt(sx, sy, LEGZ), .9, TIMBER, tone, .9, .9, 4); }
+  for (let i = 0; i < 4; i++){ const [a, b] = [CORN[i], CORN[(i + 1) % 4]];
+    for (const z of [14, 29]) K.rd(legAt(...a, z), legAt(...b, z), .5, TIMBER, tone, .7, .5, 4);
+    for (const [z0, z1] of [[14, 29], [29, 43]]){ K.rd(legAt(...a, z0), legAt(...b, z1), .33, TIMBER, tone, .6, .33, 4); K.rd(legAt(...a, z1), legAt(...b, z0), .33, TIMBER, tone, .6, .33, 4); } }
+  K.bx(TWX - 11, TWY - 11, LEGZ, TWX + 11, TWY + 11, TK0, TIMBER);
+  K.bx(TWX - 1.7, TWY - 1.7, 0, TWX + 1.7, TWY + 1.7, 2.2, SOOT);
+  K.rd([TWX, TWY, 2.2], [TWX, TWY, LEGZ], .9, SOOT);
+  return lcSort(K.parts) + tankSvg(st);
+}
+function tankSvg(st){
+  const ring = (z, r, n = 40) => on(PZ(z), ellUV(TWX, TWY, r, r, n));
+  let s = loft(ring(TK0, TKR), ring(TK1, TKR), n => tone(n, STAVE));
+  let st2 = '';
+  for (let a = 0; a < 360; a += 9){ const c = Math.cos(a*Math.PI/180), sn = Math.sin(a*Math.PI/180);
+    if (vis([c, sn, 0])) st2 += pd([[TWX + TKR*c, TWY + TKR*sn, TK0], [TWX + TKR*c, TWY + TKR*sn, TK1]], false); }
+  s += `<path d="${st2}" fill="none" stroke="${STAVE.d}" ${mw(.22)} opacity=".8"/>`;
+  for (const z of [47.5, 53.5, 59.5, 65]){ let seg = [], h = '';
+    for (let i = 0; i <= 48; i++){ const a = i/48*2*Math.PI, n = [Math.cos(a), Math.sin(a), 0];
+      if (vis(n)) seg.push([TWX + (TKR + .1)*n[0], TWY + (TKR + .1)*n[1], z]); else { if (seg.length > 1) h += strk(seg, INK, .95, 'butt') + strk(seg, '#55504a', .6, 'butt'); seg = []; } }
+    if (seg.length > 1) h += strk(seg, INK, .95, 'butt') + strk(seg, '#55504a', .6, 'butt'); s += h; }
+  // level gauge: a board on the cuve, a pointer moved by the float inside
+  const ga = 38*Math.PI/180, gn = [Math.cos(ga), Math.sin(ga), 0];
+  if (facing(gn)){ const c = [TWX + (TKR + .3)*gn[0], TWY + (TKR + .3)*gn[1]], t = [-gn[1], gn[0]];
+    const at = (k, z, o = 0) => [c[0] + t[0]*k + gn[0]*o, c[1] + t[1]*k + gn[1]*o, z];
+    s += shape([at(-1.2, 46.5), at(1.2, 46.5), at(1.2, 65.5), at(-1.2, 65.5)], '#efe6cf', .8);
+    let tk = ''; for (let i = 0; i <= 4; i++){ const z = 47.5 + 4.5*i; tk += pd([at(-1.1, z, .05), at(-.2, z, .05)], false); }
+    s += `<path d="${tk}" fill="none" stroke="${INK}" ${mw(.25)}/>`;
+    const zp = 47.5 + 18*st.tower/CAP_T;
+    s += strk([at(.6, 65.8, .1), at(.6, zp + .6, .1)], INK, .2) + shape([at(-.2, zp, .15), at(1.1, zp + .7, .15), at(1.1, zp - .7, .15)], '#e2483d', .5)
+      + shape([at(.3, 66.2, .2), at(.9, 66.2, .2), at(.9, 65.6, .2), at(.3, 65.6, .2)], SOOT.m, .4); }
+  // conical tin roof, eaves band, seams, finial
+  s += loft(ring(TK1, TKR + 1), ring(TK1 + .7, TKR + 1), n => tone(n, TIN)) + loft(ring(TK1 + .7, TKR + 1), ring(75, .35), n => tone(n, TIN));
+  let sm = ''; for (let a = 0; a < 360; a += 20){ const c = Math.cos(a*Math.PI/180), sn = Math.sin(a*Math.PI/180);
+    if (vis([c*.5, sn*.5, .85])) sm += pd([[TWX + (TKR + 1)*c, TWY + (TKR + 1)*sn, TK1 + .7], [TWX + .4*c, TWY + .4*sn, 75]], false); }
+  s += `<path d="${sm}" fill="none" stroke="${TIN.d}" ${mw(.2)}/>`;
+  s += hullInk([...ring(TK0, TKR, 24), ...ring(TK1, TKR + 1, 24), [TWX, TWY, 75]], 2.4);
+  s += rod([TWX, TWY, 74.6], [TWX, TWY, 76.4], .25, SOOT, tone, .6) + lathe(TWX, TWY, [[76.2, .2], [76.5, .6], [76.9, .7], [77.3, .5], [77.6, .1]], SOOT, .7, 12);
+  return s;
+}
+function towerShadow(){ let s = '';
+  for (const [sx, sy] of CORN){ const a = legAt(sx, sy, 0), b = legAt(sx, sy, LEGZ);
+    s += castShadow([[a[0] - .9, a[1] - .9, 0], [a[0] + .9, a[1] + .9, 0], [b[0] - .9, b[1] - .9, b[2]], [b[0] + .9, b[1] + .9, b[2]], [a[0] - .9, a[1] + .9, 0], [b[0] + .9, b[1] - .9, b[2]]]); }
+  s += castShadow([...on(PZ(LEGZ), ellUV(TWX, TWY, 12, 12, 16)), ...on(PZ(TK0), ellUV(TWX, TWY, TKR, TKR, 24)), ...on(PZ(TK1), ellUV(TWX, TWY, TKR + 1, TKR + 1, 24)), [TWX, TWY, 75]]);
+  return s; }
+
+/* ---------- la manche, la potence et le contrepoids (rangés avec le train, au-dessus du tender) ---------- */
+function spoutParts(st, K, xr){
+  const a = spoutAng(st), dir = [Math.cos(a), 0, Math.sin(a)], tip = spoutPt(st, 1), sb = [tip[0], TWY, tip[2] - 2.9];
+  K.rd([TWX + TKR - .4, TWY, PIV[2]], [PIV[0] - 1, TWY, PIV[2]], 1.15, SOOT);
+  K.rd([PIV[0], TWY - 2.2, PIV[2]], [PIV[0], TWY + 2.2, PIV[2]], 1.6, SOOT, tone, 1, 1.6, 18);
+  K.put(rbox([PIV[0] + dir[0]*1.6, TWY, PIV[2] + dir[2]*1.6], tip, 1.3), act('spout', rod([PIV[0] + dir[0]*1.6, TWY, PIV[2] + dir[2]*1.6], tip, 1.3, TIN, tone, 1.1, 1.3, 16)
+    + rod(lerp3(PIV, tip, .62), lerp3(PIV, tip, .66), 1.5, SOOT, tone, .6, 1.5, 16)));
+  K.put(rbox(tip, sb, 1.25), act('spout', rod(tip, sb, 1.15, CANVAS, tone, .8, 1.3, 14)));
+  if (st.flow > .02 && st.spout > .98){ const zb = xr ? tWaterZ(st) : TTOP + .9, w = 1.5*st.flow;
+    K.put([[TX - 1, TWY - 1, zb], [TX + 1, TWY + 1, sb[2]]], strk([sb, [TX, TWY, zb]], WATERM.d, w + .5) + strk([sb, [TX, TWY, zb]], WATERM.l, w)
+      + `<path d="${pd([[TX - .3, TWY, sb[2] - .3], [TX - .3, TWY, zb + .4]], false)}" stroke="#ffffff" ${mw(.3)} opacity=".7"/>`); }
+  // valve lever on the hinge and its pull rope
+  const la = -50*st.valve*Math.PI/180, le = [PIV[0] + 2.8*Math.cos(la), TWY + 2.4, PIV[2] + 2.8*Math.sin(la)];
+  K.rd([PIV[0], TWY + 2.3, PIV[2]], le, .3, STEEL, tone, .6);
+  cableParts(K, [le, [le[0], le[1], 13]], '#c9b07a', .3, 6);
+  K.rd([le[0] - .9, le[1], 13], [le[0] + .9, le[1], 13], .3, TIMBER, tone, .6);
+  // boom on the roof, its strut on the cuve, the pulley, the ropes and the counterweight
+  K.rd([TWX + TKR - .8, TWY, TK1 + .9], [PUL[0] + .8, TWY, PUL[2] + .3], .55, TIMBER, tone, .8, .55, 4);
+  K.rd([TWX + TKR + .1, TWY, 60.5], [PUL[0] - 3.4, TWY, PUL[2] - .3], .4, TIMBER, tone, .7, .4, 4);
+  K.rd([PUL[0], TWY - .45, PUL[2]], [PUL[0], TWY + .45, PUL[2]], PULR, STEEL, tone, .7, PULR, 16);
+  const at = spoutPt(st, .4), ls = Math.hypot(at[0] - (PUL[0] - PULR), at[2] - PUL[2]), zw = PUL[2] - (CWL - ls);
+  K.put(rbox([PUL[0] - PULR, TWY, PUL[2]], at, .2), cable([[PUL[0] - PULR, TWY, PUL[2]], at], '#c9b07a', .3));
+  K.put(rbox([PUL[0] + PULR, TWY, PUL[2]], [PUL[0] + PULR, TWY, zw], .2), cable([[PUL[0] + PULR, TWY, PUL[2]], [PUL[0] + PULR, TWY, zw]], '#c9b07a', .3));
+  K.bx(PUL[0] + PULR - 1, TWY - 1, zw - 3, PUL[0] + PULR + 1, TWY + 1, zw, SOOT);
+}
+
+/* ---------- le tas de bois ---------- */
+function pileSvg(st){
+  const { x0, x1, y0, y1 } = PILE, ph = PILE.h*st.pile, items = [];
+  for (const x of [x0 - .6, x1 + .6]) for (const y of [y0 - .6, y1 + .6])
+    items.push({ box: [[x - .5, y - .5, 0], [x + .5, y + .5, 22]], svg: rod([x, y, 0], [x, y, 22], .5, TIMBER, tone, .8, .42, 8) });
+  if (ph > .4){ const zt = Math.max(.1, ph - LOGR); let s = '';
+    for (const sg of [-1, 1]){ const x = sg > 0 ? x1 : x0;
+      if (!facing([sg, 0, 0])) continue;
+      s += shape([[x, y0, 0], [x, y1, 0], [x, y1, zt], [x, y0, zt]], BARK.d, .8);
+      let c = '';
+      for (let z = LOGR; z <= zt - .3; z += 2.6) for (let y = y0 + LOGR; y <= y1 - LOGR + .01; y += 2.6){ const e = on(PX(x + sg*.03), ellUV(y + ((z/2.6|0) % 2)*.6, z, LOGR*.92, LOGR*.92, 10)); c += pd(e); }
+      s += fill(c, LOGEND) + `<path d="${c}" fill="none" stroke="${INK}" ${mw(.18)}/>`; }
+    for (const sg of [-1, 1]){ const y = sg > 0 ? y1 : y0;
+      if (!facing([0, sg, 0])) continue;
+      s += shape([[x0, y, 0], [x1, y, 0], [x1, y, zt], [x0, y, zt]], tone([0, sg, 0], BARK), .8);
+      let ln = ''; for (let z = 2.6; z < zt; z += 2.6) ln += pd([[x0, y, z], [x1, y, z]], false);
+      s += `<path d="${ln}" fill="none" stroke="${INK}" ${mw(.2)}/>`; }
+    const logs = [];
+    for (let y = y0 + LOGR; y <= y1 - LOGR + .01; y += 2.6) logs.push({ box: [[x0, y - LOGR, zt - LOGR], [x1, y + LOGR, zt + LOGR]], svg: logSvg([x0 + .2, y, zt], [x1 - .2, y, zt]) });
+    s += byDepth(logs);
+    items.push({ box: [[x0, y0, 0], [x1, y1, ph]], svg: s }); }
+  return byDepth(items);
+}
+const pileShadow = st => { const { x0, x1, y0, y1 } = PILE, ph = Math.max(.5, PILE.h*st.pile);
+  return castShadow([[x0, y0, 0], [x1, y0, 0], [x1, y1, 0], [x0, y1, 0], [x0, y0, ph], [x1, y0, ph], [x1, y1, ph], [x0, y1, ph]])
+    + [x0 - .6, x1 + .6].map(x => [y0 - .6, y1 + .6].map(y => castShadow([[x - .5, y - .5, 0], [x + .5, y + .5, 0], [x - .4, y - .4, 22], [x + .4, y + .4, 22]])).join('')).join(''); };
+
+/* ---------- le mécanisme qui tourne (roues, bielles, crosses, cylindres) ---------- */
+let PISTON_U = 64;
+function runGear(st, m, K, xr){
+  const { put, bx, rd } = K, th = st.s / RD;
+  for (const ua of DRV) rd([TX - WX0, LY(ua), AZ], [TX + WX0, LY(ua), AZ], .9, STEEL);
+  for (const ua of BOG) rd([TX - WX0, LY(ua), BAZ], [TX + WX0, LY(ua), BAZ], .6, STEEL);
+  for (const sg of [1, -1]){
+    const ph = -th + (sg > 0 ? 0 : Math.PI/2) + .6, [wa, wb] = xs(sg, WX0, WX1);
+    for (const ua of DRV) put([[wa, LY(ua) - RD, RT], [wb, LY(ua) + RD, AZ + RD]], wheelX(wa, wb, LY(ua), AZ, RD, m, ph, 14, true));
+    for (const ua of BOG) put([[wa, LY(ua) - RBG, RT], [wb, LY(ua) + RBG, BAZ + RBG]], wheelX(wa, wb, LY(ua), BAZ, RBG, m, -st.s/RBG, 8, false));
+    const pin = ua => [LY(ua) + CRK*Math.cos(ph), AZ + CRK*Math.sin(ph)], [ry, rz] = pin(DRV[0]), [fy, fz] = pin(DRV[1]);
+    const yc = fy + Math.sqrt(MRL*MRL - (fz - AZ)**2), xc = TX + sg*CYX;
+    // crank pins (the front one carries the main rod too)
+    for (const [y, z] of [[ry, rz], [fy, fz]]){ const [p0, p1] = xs(sg, WX1, 8.05); put([[p0, y - .6, z - .6], [p1, y + .6, z + .6]], cylX(p0, p1, y, z, .55, STEEL, tone, .6, 12)); }
+    { const [p0, p1] = xs(sg, 8.85, 11.6); put([[p0, fy - .6, fz - .6], [p1, fy + .6, fz + .6]], cylX(p0, p1, fy, fz, .55, STEEL, tone, .6, 12)); }
+    // coupling rod
+    { const [c0, c1] = xs(sg, 8.05, 8.85);
+      put([[c0, Math.min(ry, fy) - 1.2, Math.min(rz, fz) - 1.2], [c1, Math.max(ry, fy) + 1.2, Math.max(rz, fz) + 1.2]],
+        barYZ(ry, rz, fy, fz, c0, c1, .55, STEEL) + cylX(c0, c1, ry, rz, 1.1, STEEL, tone, .6, 14) + cylX(c0, c1, fy, fz, 1.1, STEEL, tone, .6, 14)); }
+    // main rod, crosshead, guides and their yoke, piston rod
+    { const [m0, m1] = xs(sg, 11.6, 12.4);
+      put([[m0, fy - 1.3, Math.min(fz, AZ) - 1.3], [m1, yc + .9, Math.max(fz, AZ) + 1.3]], barYZ(fy, fz, yc, AZ, m0, m1, .62, STEEL)
+        + cylX(m0, m1, fy, fz, 1.25, STEEL, tone, .6, 14) + cylX(m0, m1, yc, AZ, .9, STEEL, tone, .6, 12)); }
+    { const [h0, h1] = xs(sg, 10.2, 11.6); bx(h0, yc - 1.6, AZ - 1.4, h1, yc + 1.6, AZ + 1.4, STEEL, tone, .7); }
+    { const [g0, g1] = xs(sg, 10.3, 11.5); for (const z0 of [AZ + 1.45, AZ - 2.05]) bx(g0, LY(46.8), z0, g1, LY(CY0), z0 + .6, STEEL, tone, .6); }
+    { const [y0, y1] = xs(sg, 5.8, 11.4); bx(y0, LY(46), AZ - 2.6, y1, LY(46.8), 21, SOOT, tone, .7); }
+    rd([xc, yc + 1.6, AZ], [xc, LY(CY0) - .45, AZ], .45, STEEL, tone, .5, .45, 10);
+    // cylinder with its covers (see-through: the piston inside), valve chest on top (see-through: the slide valve)
+    const yp = yc + 12.5; PISTON_U = yp - LY(0);
+    const cA = [xc, LY(CY0), AZ], cB = [xc, LY(CY1), AZ], cv0 = rod([xc, LY(CY0) - .45, AZ], cA, CYR + .3, IRON, tone, .7, CYR + .3, 22), cv1 = rod(cB, [xc, LY(CY1) + .45, AZ], CYR + .3, IRON, tone, .7, CYR + .3, 22);
+    let body = rod(cA, cB, CYR, IRON, tone, 1.2, CYR, 22);
+    if (xr) body = rod([xc, LY(CY0), AZ], [xc, yp, AZ], .45, STEEL, tone, .5, .45, 10) + rod([xc, yp - .5, AZ], [xc, yp + .5, AZ], CYR - .2, STEEL, tone, .8, CYR - .2, 20)
+      + `<g opacity=".4">${rod(cA, cB, CYR, IRON, tone, 1.2, CYR, 22)}</g>`;
+    put([[xc - CYR - .3, LY(CY0) - .45, AZ - CYR - .3], [xc + CYR + .3, LY(CY1) + .45, AZ + CYR]], facing([0,1,0]) ? cv0 + body + cv1 : cv1 + body + cv0);
+    { const [v0, v1] = xs(sg, 9, 13), vu = 66 + 1.4*Math.cos(ph + Math.PI/2);
+      if (!xr) bx(v0, LY(61.6), AZ + CYR, v1, LY(70.4), AZ + 6.4, IRON, tone, .9);
+      else put([[v0, LY(61.6), AZ + CYR], [v1, LY(70.4), AZ + 6.4]], box(v0 + .6, LY(vu - 2.2), AZ + CYR, v1 - .6, LY(vu + 2.2), AZ + 4.6, BRASS, tone, .6)
+        + `<g opacity=".4">${box(v0, LY(61.6), AZ + CYR, v1, LY(70.4), AZ + 6.4, IRON, tone, .9)}</g>`); }
+  }
+}
+function tenderTrucks(st, K){
+  const { put, bx, rd } = K;
+  for (const va of TAX) rd(Tp(-WX0, va, TAZ), Tp(WX0, va, TAZ), .6, STEEL);
+  for (const vc of TRK){
+    bx(TX - 8.1, TYv(vc - 1.4), TAZ + 2.4, TX + 8.1, TYv(vc + 1.4), 15, SOOT);
+    for (const sg of [1, -1]){ const [wa, wb] = xs(sg, WX0, WX1);
+      for (const va of TAX.filter(v => Math.abs(v - vc) < 10)) put([[wa, TYv(va) - RTW, RT], [wb, TYv(va) + RTW, TAZ + RTW]], wheelX(wa, wb, TYv(va), TAZ, RTW, SOOT, -st.s/RTW, 0, false));
+      const [f0, f1] = xs(sg, 8.2, 8.9), [j0, j1] = xs(sg, 8.05, 9.3);
+      let s = box(f0, TYv(vc - 7.5), TAZ - 2.4, f1, TYv(vc + 7.5), TAZ - 1.7, SOOT, tone, .6);
+      for (const va of [vc - 7.5, vc + 7.5]) s += box(j0, TYv(va - 1.3), TAZ - 1.4, j1, TYv(va + 1.3), TAZ + 1.4, SOOT, tone, .7);
+      s += box(f0, TYv(vc - 9.5), TAZ + 1.4, f1, TYv(vc + 9.5), TAZ + 2.4, SOOT, tone, .7);
+      put([[j0, TYv(vc - 9.5), TAZ - 2.4], [j1, TYv(vc + 9.5), TAZ + 2.4]], s); } }
+}
+
+/* ---------- la locomotive ---------- */
+function dome(u, r, zt, M){ const y = LY(u), zb = BTOP - 1.7, zc = zt - r*.75, prof = [[zb, r + .8], [zb + 2, r + .7], [zb + 2.2, r], [zc, r]];
+  for (let i = 1; i <= 6; i++){ const a = i*15*Math.PI/180; prof.push([zc + r*.75*Math.sin(a), r*Math.cos(a)]); }
+  return lathe(TX, y, prof, M, 1.3, 24); }
+// what holds the wheels: main frames, saddle, bogie frames and pivot, tender sills (drawn in see-through too)
+function frames(K){
+  const { bx } = K;
+  for (const sg of [1, -1]){ const [a, b] = xs(sg, 5, 5.8); bx(a, LY(-1), 9.5, b, LY(61.9), 16.5, SOOT, tone, .8); }
+  bx(TX - 8, LY(62), 13.4, TX + 8, LY(70), BZ - SBR, SOOT, tone, .9);                                   // saddle
+  for (const sg of [1, -1]){ const [a, b] = xs(sg, 4.2, 5); bx(a, LY(56), 8.2, b, LY(74), 10.6, SOOT, tone, .7); }   // bogie frames
+  bx(TX - 4.2, LY(63.5), 10.6, TX + 4.2, LY(66.5), 13.4, SOOT, tone, .7);                               // bogie pivot
+  bx(TX - 12.5, TYv(0), 15, TX + 12.5, TYv(TLEN), TDK, SOOT, tone, 1);                                  // tender sills
+}
+function locoBody(st, m, K){
+  const { put, bx, rd } = K;
+  bx(TX - 4.8, LY(18), 9.5, TX + 4.8, LY(29.5), BZ - BR, IRON, tone, .9);                                // firebox below the barrel
+  // boiler barrel with its brass bands, smokebox with its door
+  put([[TX - BR, LY(17), BZ - BR], [TX + BR, LY(62), BTOP]], rod(Lp(0, 17, BZ), Lp(0, 62, BZ), BR, IRON, tone, 1.8, BR, 34)
+    + [22, 31, 40, 52, 60].map(u => bandY(LY(u), BR + .05, BRASS.m, .7)).join(''));
+  { let sx = rod(Lp(0, 62, BZ), Lp(0, 74, BZ), SBR, SOOT, tone, 1.8, SBR, 34) + bandY(LY(62.4), SBR + .05, BRASS.m, .5);
+    if (facing([0,1,0])){ const y = LY(74) + .06, pl = (pts, c, w = .7) => shape(on(PY(y), pts), c, w), fc = tone([0,1,0], SOOT);
+      sx += pl(ellUV(TX, BZ, 4.9, 4.9, 30), mix(fc, '#000000', .15), .9) + ink(pd(on(PY(y + .02), ellUV(TX, BZ, 4.2, 4.2, 30))), .5);
+      for (const z of [BZ + 2.2, BZ - 2.2]) sx += shape(on(PY(y + .05), rectUV(TX - 5.2, z - .35, TX + 1.2, z + .35)), mix(fc, '#ffffff', .15), .5);
+      sx += shape(on(PY(y + .08), ellUV(TX, BZ + 3, 1.7, 1, 18)), BRASS.l, .6) + txFront(TX, y + .1, BZ + 2.65, '7', 1.3, INK, 1)
+        + ink(pd(on(PY(y + .08), [[TX - 1.4, BZ - .4], [TX + 1.4, BZ - .4]]), false), .8) + ink(pd(on(PY(y + .08), [[TX, BZ - 1.4], [TX, BZ + .8]]), false), .8); }
+    put([[TX - SBR, LY(62), BZ - SBR], [TX + SBR, LY(74), SBTOP]], sx); }
+  // stack: the pipe, then the balloon with its spark screen
+  { const y = LY(68);
+    put([[TX - 2.8, y - 2.8, SBTOP], [TX + 2.8, y + 2.8, 40.5]], lathe(TX, y, [[32.6, 2.9], [33.9, 2.9], [34.1, 2], [40.5, 2]], SOOT, 1.2));
+    const top = on(PZ(47.2), ellUV(TX, y, 5.6, 5.6, 26));
+    let fl = lathe(TX, y, [[40.5, 2.05], [41.6, 2.6], [43, 3.8], [44.4, 5], [45.4, 5.5], [45.6, 5.75], [47.2, 5.75]], SOOT, 1.6, 26);
+    let mesh = ''; for (let k = -5; k <= 5; k++) mesh += pd([[TX + k, y - 6, 47.25], [TX + k, y + 6, 47.25]], false) + pd([[TX - 6, y + k, 47.25], [TX + 6, y + k, 47.25]], false);
+    fl += fill(pd(top), '#2b2622') + clipTo(top, `<path d="${mesh}" fill="none" stroke="#7d756c" ${mw(.12)}/>`) + ink(pd(top), .9);
+    put([[TX - 5.8, y - 5.8, 40.5], [TX + 5.8, y + 5.8, 47.3]], fl); }
+  // headlamp on its bracket
+  { let hl = box(TX - 1.6, LY(71), SBTOP - .4, TX + 1.6, LY(74), 34.6, SOOT, tone, .6) + box(TX - 2.8, LY(70.6), 34.6, TX + 2.8, LY(75.4), 39.7, m, tone, .9)
+      + box(TX - 3.2, LY(70.2), 39.7, TX + 3.2, LY(75.8), 40.45, SOOT, tone, .8);
+    if (facing([0,1,0])){ const y = LY(75.4) + .05, lit = '#fff1b0';
+      hl += shape(on(PY(y), ellUV(TX, 37.1, 2.1, 2.1, 20)), BRASS.m, .7) + shape(on(PY(y + .03), ellUV(TX, 37.1, 1.6, 1.6, 20)), lit, .5)
+        + fill(pd(on(PY(y + .05), ellUV(TX - .5, 37.6, .5, .5, 10))), '#ffffff', 'opacity=".8"'); }
+    put([[TX - 3.2, LY(70.2), SBTOP], [TX + 3.2, LY(75.8), 40.45]], hl); }
+  // domes, whistle, safety valves, bell
+  put([[TX - 3.4, LY(42.6), BTOP], [TX + 3.4, LY(49.4), 43.2]], dome(46, 3.3, 40.2, BRASS)
+    + lathe(TX, LY(47.2), [[39.6, .35], [41.4, .35], [41.5, .7], [42.6, .6], [43.1, .2]], BRASS, .7, 12)
+    + lathe(TX - .9, LY(44.8), [[39.2, .45], [41.2, .3], [41.6, .5]], BRASS, .6, 10) + lathe(TX + .9, LY(44.8), [[39.2, .45], [41.2, .3], [41.6, .5]], BRASS, .6, 10));
+  put([[TX - 3.4, LY(33.6), BTOP], [TX + 3.4, LY(40.4), 38]], dome(37, 2.6, 37.8, IRON));
+  { const y = LY(56), bl = [];
+    for (const sg of [-1, 1]) bl.push({ box: [[TX + sg*2.6 - .3, y - .3, BTOP], [TX + sg*2.6 + .3, y + .3, 37.4]], svg: rod([TX + sg*2.6, y, BTOP - .6], [TX + sg*2.6, y, 37.4], .3, BRASS, tone, .6) });
+    bl.push({ box: [[TX - 2.15, y - 2.15, 33.9], [TX + 2.15, y + 2.15, 37.1]], svg: lathe(TX, y, [[33.9, 2.15], [34.3, 2.05], [35.4, 1.55], [36.4, 1.2], [36.9, .85], [37.1, .3]], BRASS, 1, 20) });
+    let s = byDepth(bl) + rod([TX - 2.9, y, 37.35], [TX + 2.9, y, 37.35], .3, BRASS, tone, .6);
+    put([[TX - 2.9, y - 2.15, BTOP], [TX + 2.9, y + 2.15, 37.7]], s); }
+  // handrails on stanchions, running boards
+  for (const sg of [1, -1]){ let s = rod(Lp(sg*6.9, 18.6, 30.2), Lp(sg*6.9, 73.2, 30.2), .22, STEEL, tone, .6, .22, 8);
+    for (const u of [22, 34, 50, 60, 70]) s += rod(Lp(sg*(u > 62 ? 5.6 : 5.2), u, 30.2), Lp(sg*6.9, u, 30.2), .18, STEEL, tone, .5, .18, 6);
+    const [a, b] = xs(sg, 5.2, 7.15); put([[a, LY(18.4), 29.9], [b, LY(73.4), 30.5]], s);
+    const [r0, r1] = xs(sg, 6.3, 12.5); bx(r0, LY(17), 21, r1, LY(72.5), 21.6, SOOT, tone, .8); }
+  // pilot beam and cowcatcher
+  bx(TX - 12, LY(74), 10, TX + 12, LY(75.5), 13.6, m, tone, .9);
+  for (const sg of [1, -1]){ const A = Lp(sg*12, 75.5, 13.4), Bt = Lp(0, 75.5, 13.4), Cc = Lp(0, 86, 6.6), Dd = Lp(sg*12, 75.5, 6.6), cen = Lp(0, 77, 9);
+    const tri = q => { let n = norm(cross(sub(q[1], q[0]), sub(q[2], q[0]))); if (dot(n, sub(avg(q), cen)) < 0) n = n.map(v => -v); return [n, q]; };
+    let s = ''; const T1 = tri([A, Bt, Cc]), T2 = tri([A, Cc, Dd]);
+    for (const [n, q] of [T1, T2]) if (vis(n)) s += face(pd(q), tone(n, m));
+    let sl = '';
+    for (let i = 1; i < 9; i++){ const t = i/9, top = lerp3(A, Bt, t), fold = lerp3(A, Cc, t), bot = lerp3(Dd, Cc, t);
+      if (vis(T1[0])) sl += pd([top, fold], false); if (vis(T2[0])) sl += pd([fold, bot], false); }
+    s += `<path d="${sl}" fill="none" stroke="${m.d}" ${mw(.45)}/>` + hullInk([A, Bt, Cc, Dd], 1.2);
+    const [a, b] = xs(sg, 0, 12); put([[a, LY(75.5), 6.6], [b, LY(86), 13.4]], s); }
+}
+function cabParts(st, m, K){
+  const { put, bx, rd } = K, wood = PLANK;
+  bx(TX - 12.5, LY(-.5), 20.6, TX + 12.5, LY(17), CABF, wood, tone, .9);
+  // side walls with their windows (open frames with glass): the face toward the viewer only
+  for (const sg of [1, -1]){ const out = facing([sg,0,0]), x = TX + sg*(out ? 12.5 : 12), n = [out ? sg : -sg, 0, 0];
+    const rect = (u0, z0, u1, z1) => [[x, LY(u0), z0], [x, LY(u1), z0], [x, LY(u1), z1], [x, LY(u0), z1]];
+    const wins = [rect(2.2, 29, 7.4, 35.8), rect(9.2, 29, 14.8, 35.8)];
+    let s = `<path d="${pd(rect(0, CABF, 17, CABT))}${wins.map(w => pd(w.slice().reverse())).join('')}" fill="${tone(n, m)}" fill-rule="evenodd"/>`;
+    s += wins.map(w => glass(w, .28) + ink(pd(w), .8)).join('') + ink(pd(rect(0, CABF, 17, CABT)), 1.1) + ink(pd([[x, LY(0), 27.8], [x, LY(17), 27.8]], false), .5);
+    if (out) s += txSide(x + sg*.05, LY(8.5), 24.6, '7', 2.6, BRASS.l, sg);
+    if (facing([0,-1,0])) s += shape([[TX + sg*12, LY(0), CABF], [TX + sg*12.5, LY(0), CABF], [TX + sg*12.5, LY(0), CABT], [TX + sg*12, LY(0), CABT]], tone([0,-1,0], m), .6);
+    const [a, b] = xs(sg, 12, 12.5); put([[a, LY(0), CABF], [b, LY(17), CABT]], s); }
+  // front wall round the boiler, with two windows
+  { const fy = facing([0,1,0]), y = fy ? LY(17) : LY(16.6), n = [0, fy ? 1 : -1, 0], pl = pts => on(PY(y), pts);
+    const wins = [-1, 1].map(sg => pl(rectUV(TX + (sg > 0 ? 7.2 : -11.2), 29.5, TX + (sg > 0 ? 11.2 : -7.2), 35.8)));
+    let s = `<path d="${pd(pl(rectUV(TX - 12.5, CABF, TX + 12.5, CABT)))}${pd(pl(ellUV(TX, BZ, BR, BR, 34)).reverse())}${wins.map(w => pd(w.slice().reverse())).join('')}" fill="${tone(n, m)}" fill-rule="evenodd"/>`;
+    s += wins.map(w => glass(w, .28) + ink(pd(w), .8)).join('') + ink(pd(pl(rectUV(TX - 12.5, CABF, TX + 12.5, CABT))), 1.1);
+    put([[TX - 12.5, LY(16.6), CABF], [TX + 12.5, LY(17), CABT]], s); }
+  // roof and clerestory
+  put([[TX - 13.5, LY(-1.5), CABT], [TX + 13.5, LY(18.5), CABT + 1.9]], box(TX - 13.5, LY(-1.5), CABT, TX + 13.5, LY(18.5), CABT + .9, SOOT, tone, 1.2)
+    + box(TX - 6, LY(1), CABT + .9, TX + 6, LY(16), CABT + 1.9, m, tone, .9));
+  // the backhead: fire hole and door, pressure gauge, water glass
+  { let s = ''; const y = LY(16.6) - .03, fire = st.fire, open = st.door;
+    if (facing([0,-1,0])){ const pl = pts => on(PY(y), pts);
+      s += shape(pl(rectUV(TX - 1.9, 23.2, TX + 1.9, 26.8)), mix('#3a1a0c', '#ffb03a', Math.min(1, .25 + fire*.75)), .6);
+      if (open > .02) s += fill(pd(pl(rectUV(TX - 1.6, 23.5, TX + 1.6, 26.5))), '#fff0a0', `opacity="${f(.8*open)}"`);
+      const g = [TX - 2.8, 31.6], na = (225 - 270*Math.min(1, st.p/12))*Math.PI/180;
+      s += shape(on(PY(y - .05), ellUV(g[0], g[1], 1.25, 1.25, 18)), BRASS.m, .6) + shape(on(PY(y - .08), ellUV(g[0], g[1], 1, 1, 18)), '#fbf6e6', .4)
+        + strk(on(PY(y - .1), [[g[0], g[1]], [g[0] + .85*Math.cos(na), g[1] + .85*Math.sin(na)]]), '#c0392b', .18);
+      s += shape(pl(rectUV(TX + 2.3, 29, TX + 2.9, 33.4)), GLASS, .5) + fill(pd(on(PY(y - .02), rectUV(TX + 2.4, 29.1, TX + 2.8, 31.2))), WATERM.m); }
+    const dx = 3.8*open;
+    s += box(TX - 2.2 + dx, LY(16.25), 22.8, TX + 2.2 + dx, LY(16.55), 27.2, SOOT, tone, .7);
+    put([[TX - 6, LY(16.2), 22.5], [TX + 6.4, LY(16.6), 34]], act('door', s)); }
+  rd(Lp(0, 16.6, 32.6), Lp(2.6, 13.8, 31.4), .25, STEEL, tone, .5, .25, 8);
+  rd(Lp(9.5, 6.5, CABF), Lp(9.5, 8.6, 30.2), .3, STEEL, tone, .6, .3, 8);
+  bx(TX + 9.1, LY(5.5), CABF, TX + 9.9, LY(10.5), 23.4, SOOT, tone, .5);
+  for (const sg of [1, -1]){ const [a, b] = xs(sg, 8.4, 11.9); bx(a, LY(2.5), 27.4, b, LY(7), 28.2, PLANK, tone, .6); bx(Math.min(a, b) + (sg > 0 ? 3.1 : 0), LY(3), 24.4, Math.min(a, b) + (sg > 0 ? 3.5 : .4), LY(6.5), 27.4, PLANK, tone, .5); }
+}
+
+/* ---------- le tender ---------- */
+function tenderBody(st, m, K){
+  const { put, bx, rd } = K;
+  const trim = (x0, y0, x1, y1) => { let s = '';
+    for (const [n, pts] of [[[1,0,0], [[x1, y0, TTOP - .9], [x1, y1, TTOP - .9]]], [[-1,0,0], [[x0, y0, TTOP - .9], [x0, y1, TTOP - .9]]], [[0,-1,0], [[x0, y0, TTOP - .9], [x1, y0, TTOP - .9]]], [[0,1,0], [[x0, y1, TTOP - .9], [x1, y1, TTOP - .9]]]])
+      if (facing(n)) s += ink(pd(pts, false), .55) + ink(pd(pts.map(p => [p[0], p[1], TDK + .9]), false), .55);
+    return s; };
+  put([[TX - 12.5, TYv(.5), TDK], [TX + 12.5, TYv(18), TTOP]], box(TX - 12.5, TYv(.5), TDK, TX + 12.5, TYv(18), TTOP, m, tone, 1.3) + trim(TX - 12.5, TYv(.5), TX + 12.5, TYv(18)));
+  // the arms of the U, lettered on their outer face
+  for (const sg of [1, -1]){ const [a, b] = xs(sg, 8.5, 12.5);
+    put([[a, TYv(18), TDK], [b, TYv(52), TTOP]], box(a, TYv(18), TDK, b, TYv(52), TTOP, m, tone, 1.3) + trim(a, TYv(18), b, TYv(52))
+      + (facing([sg,0,0]) ? txSide(TX + sg*12.56, TYv(35), 23.4, 'CHEMIN DE FER', 2.9, '#f7e6b0', sg) : '')); }
+  bx(TX - 8.5, TYv(52.5), TDK, TX + 8.5, TYv(54), CABF, PLANK, tone, .8);
+  // hand brake: staff and wheel at the front corner
+  { const x = TX - 10.6, y = TYv(53.3), wr = on(PZ(31.6), ellUV(x, y, 1.6, 1.6, 16));
+    let s = rod([x, y, TDK], [x, y, 31.6], .3, STEEL, tone, .6, .3, 8) + `<path d="${pd(wr)}" fill="none" stroke="${INK}" ${mw(.6)}/><path d="${pd(wr)}" fill="none" stroke="${STEEL.m}" ${mw(.35)}/>`
+      + ink(pd([[x - 1.6, y, 31.6], [x + 1.6, y, 31.6]], false), .5) + ink(pd([[x, y - 1.6, 31.6], [x, y + 1.6, 31.6]], false), .5);
+    put([[x - 1.6, y - 1.6, TDK], [x + 1.6, y + 1.6, 31.8]], s); }
+  // water hatch: collar, opening and its hinged lid
+  { const y = TYv(HV); let s = cyl(TX, y, TTOP, TTOP + .8, HRAD, SOOT, tone, .8, 20);
+    if (st.hatch > .05) s += fill(pd(on(PZ(TTOP + .82), ellUV(TX, y, HRAD - .35, HRAD - .35, 18))), '#17222b') + (st.flow > .05 ? fill(pd(on(PZ(TTOP + .84), ellUV(TX, y, HRAD - .6, HRAD - .6, 14))), WATERM.l, `opacity="${f(.7*st.flow)}"`) : '');
+    put([[TX - HRAD, y - HRAD, TTOP], [TX + HRAD, y + HRAD, TTOP + .8]], act('spout', s));
+    const a = st.hatch*100*Math.PI/180, hy = y - HRAD - .1, hz = TTOP + .95, c = [TX, hy + (HRAD + .1)*Math.cos(a), hz + (HRAD + .1)*Math.sin(a)], n = [0, -Math.sin(a), Math.cos(a)];
+    const la = [c[0], c[1] - n[1]*.15, c[2] - n[2]*.15], lb = [c[0], c[1] + n[1]*.15, c[2] + n[2]*.15];
+    put(rbox(la, lb, HRAD + .3), rod(la, lb, HRAD + .3, SOOT, tone, .8, HRAD + .3, 20)); }
+  // drawbar and fall plate between tender and cab
+  bx(TX - 1.4, TYv(54), 15.4, TX + 1.4, LY(-.5), 16.6, SOOT, tone, .6);
+  bx(TX - 5, TYv(52.6), CABF, TX + 5, LY(-.5), CABF + .3, SOOT, tone, .6);
+  cableParts(K, [Tp(-9.8, 53.6, 16.6), Tp(-9.8, 55.2, 14.6), Lp(-9.8, 1, 15.2), Lp(-9.8, 4.6, 17.8)], '#3b3733', .7, 2.5);
+  bx(TX - 10.5, LY(4.6), 17.4, TX - 9.1, LY(8.4), 20, BRASS, tone, .7);                                  // injector
+}
+// the wood in the bunker: a stack of logs lengthwise, ends showing at the front
+function woodStack(st, K){
+  if (st.wood < .015) return;
+  const wz = woodTop(st), x0 = TX - 8, x1 = TX + 8, y0 = TYv(18.6), y1 = TYv(52.4), zt = Math.max(TDK + .2, wz - LOGR);
+  let s = '';
+  for (const sg of [-1, 1]) if (facing([sg,0,0])){ const x = sg > 0 ? x1 : x0;
+    s += shape([[x, y0, TDK], [x, y1, TDK], [x, y1, zt], [x, y0, zt]], tone([sg,0,0], BARK), .7);
+    let ln = ''; for (let z = TDK + 2.6; z < zt; z += 2.6) ln += pd([[x, y0, z], [x, y1, z]], false); s += `<path d="${ln}" fill="none" stroke="${INK}" ${mw(.2)}/>`; }
+  for (const sg of [-1, 1]) if (facing([0,sg,0])){ const y = sg > 0 ? y1 : y0;
+    s += shape([[x0, y, TDK], [x1, y, TDK], [x1, y, zt], [x0, y, zt]], BARK.d, .7);
+    let c = ''; for (let z = TDK + LOGR; z <= zt - .3; z += 2.6) for (let i = 0; i < 6; i++) c += pd(on(PY(y + sg*.03), ellUV(TX - 6.5 + 2.6*i + ((z/2.6|0) % 2)*.5, z, LOGR*.92, LOGR*.92, 10)));
+    if (c) s += fill(c, LOGEND) + `<path d="${c}" fill="none" stroke="${INK}" ${mw(.18)}/>`; }
+  const top = [];
+  for (let i = 0; i < 6; i++){ const x = TX - 6.5 + 2.6*i;
+    for (let j = 0; j < 3; j++){ const ya = y0 + .1 + j*11.27, yb = ya + 11.1;
+      top.push({ box: [[x - LOGR, ya, zt - LOGR], [x + LOGR, yb, zt + LOGR]], svg: logSvg([x, ya, zt], [x, yb, zt]) }); } }
+  s += byDepth(top);
+  K.put([[x0, y0, TDK], [x1, y1, wz]], s);
+}
+
+/* ---------- ce qu'on voit en transparence ---------- */
+function boilerMech(st, K){
+  const { put, bx, rd } = K, mv = !!st.mv, live = mv ? matOf('#f19a7c') : STEEL, WL = BZ + 2.6;
+  // firebox with its grate, burning logs and flames, inside the water that surrounds it
+  { const fx0 = TX - 4.2, fx1 = TX + 4.2, fy0 = LY(18.4), fy1 = LY(29.2);
+    let fire = '';
+    let gr = ''; for (let k = -3; k <= 3; k++) gr += pd([[TX + k*1.1, fy0 + .2, 12], [TX + k*1.1, fy1 - .2, 12]], false);
+    fire += `<path d="${gr}" fill="none" stroke="${INK}" ${mw(.45)}/>`;
+    for (const [dx, u0] of [[-2, 19.2], [1.6, 20.4], [-.2, 22.6]]) fire += logSvg(Lp(dx, u0, 12.9), Lp(dx, u0 + 6, 12.9), .85);
+    const fl = st.fire;
+    if (fl > .02){ fire += fill(pd([[fx0, fy0, 12.2], [fx1, fy0, 12.2], [fx1, fy1, 12.2], [fx0, fy1, 12.2]]), '#ff6a1a', `opacity="${f(.35*fl)}"`);
+      [[-2.5, 20], [0, 21.5], [2.5, 20.5], [-1.5, 24], [1.8, 25], [0, 27.2], [-2.8, 27]].forEach(([dx, u], i) => {
+        const h = (2 + 10*fl)*(.82 + .18*Math.sin(st.clock*9 + i*1.7)), [bxp, byp] = P(...Lp(dx, u, 12.6)), [tx_, ty_] = P(...Lp(dx, u, 12.6 + h)), w = 1.5;
+        const fp = (ww) => `M${f(bxp - ww)} ${f(byp)}Q${f(bxp - ww)} ${f((byp + ty_)/2)} ${f(tx_)} ${f(ty_)}Q${f(bxp + ww)} ${f((byp + ty_)/2)} ${f(bxp + ww)} ${f(byp)}Z`;
+        fire += `<path d="${fp(w)}" fill="#ff7a1a" opacity=".9"/><path d="${fp(w*.5)}" fill="#ffd447"/>`; }); }
+    const fb = hollowBox(fx0, fy0, 11, fx1, fy1, 29.5, COPPER, fire, 1, .25);
+    put([[TX - 5.2, LY(17.4), 9.8], [TX + 5.2, LY(29.6), WL]], hollowBox(TX - 5, LY(17.4), 10, TX + 5, LY(29.6), WL, WATERM, fb, .25, .3, .5)); }
+  // barrel: fire tubes inside the water, the water's surface, the steam above
+  { const r = BR - .35, a0 = Math.asin((WL - BZ)/r)*180/Math.PI, pr = arcUV(TX, BZ, r, 180 - a0, 360 + a0, 18);
+    const A = on(PY(LY(29.6)), pr), B = on(PY(LY(62)), pr), hot = mix('#b3babe', '#ff8a3d', Math.min(1, st.fire));
+    let s = '';
+    for (const dx of [-3, 0, 3]) for (const z of [23.6, 26, 28.4]) s += rod(Lp(dx, 29.6, z), Lp(dx, 62, z), .42, matOf(hot), tone, .4, .42, 8);
+    s += `<g opacity=".5">${loft(A, B, n => tone(n, WATERM))}${facing([0,1,0]) ? fill(pd(B), WATERM.m) : facing([0,-1,0]) ? fill(pd(A), WATERM.m) : ''}</g>` + hullInk([...A, ...B], .7);
+    put([[TX - r, LY(29.6), BZ - r], [TX + r, LY(62), WL]], s); }
+  // dome: regulator valve, its rod back to the cab, the dry pipe forward, steam pipes down to the valve chests
+  bx(TX - 1.4, LY(45), 34, TX + 1.4, LY(47.4), 36.6, mv ? matOf('#f19a7c') : BRASS, tone, .7);
+  rd(Lp(0, 46.2, 34), Lp(0, 46.2, 32.2), .65, live, tone, .6);
+  rd(Lp(0, 46.2, 32.2), Lp(0, 63.6, 32.2), .65, live, tone, .7);
+  rd(Lp(1, 45, 34.8), Lp(1, 16.6, 32.6), .22, STEEL, tone, .5, .22, 8);
+  rd(Lp(0, 63.6, 32.2), Lp(0, 64.4, 29.5), .65, live, tone, .6);
+  for (const sg of [1, -1]){ rd(Lp(0, 64.4, 29.5), Lp(sg*4.8, 65.4, 24), .6, live, tone, .6); rd(Lp(sg*4.8, 65.4, 24), Lp(sg*9.6, 66, AZ + 5), .6, live, tone, .6);
+    rd(Lp(sg*9.2, 67.4, AZ + 4), Lp(sg*1.2, 68, 21.6), .55, matOf('#c8c4bd'), tone, .5); }
+  // blast pipe under the stack
+  rd(Lp(0, 68, 21.4), Lp(0, 68, 28.8), 1.05, SOOT, tone, .7, .7);
+  if (mv && (st.chuffK || 0) > .2) put([[TX - 1.5, LY(66.5), 28.8], [TX + 1.5, LY(69.5), 33.6]], fill(pd([...on(PZ(28.9), ellUV(TX, LY(68), .7, .7, 10)), ...on(PZ(33.4), ellUV(TX, LY(68), 1.8, 1.8, 10))].map(p => p)), '#ffffff', 'opacity=".55"'));
+  // injector: steam from the backhead, water from the tender hose, delivery to the check valve on the boiler side
+  const feed = matOf('#d8894f');
+  rd(Lp(-5, 16.6, 31), Lp(-9.8, 12, 25), .3, live, tone, .5, .3, 8); rd(Lp(-9.8, 12, 25), Lp(-9.8, 8.4, 19.6), .3, live, tone, .5, .3, 8);
+  rd(Lp(-9.8, 8.4, 18.6), Lp(-9.8, 30.2, 18.6), .32, feed, tone, .5, .32, 8); rd(Lp(-9.8, 30.2, 18.6), Lp(-9.8, 30.8, 24.6), .32, feed, tone, .5, .32, 8);
+  rd(Lp(-9.8, 30.8, 24.6), Lp(-6.2, 31.4, 25.4), .32, feed, tone, .5, .32, 8);
+  bx(TX - 6.4, LY(30.6), 24.4, TX - 5.6, LY(32.2), 26.2, BRASS, tone, .6);
+}
+function tenderMech(st, K){
+  const z1 = tWaterZ(st), z0 = TDK + .3; if (z1 < z0 + .05) return;
+  const wb = (x0, y0, x1, y1) => K.put([[x0, y0, z0], [x1, y1, z1]], `<g opacity=".6">${box(x0, y0, z0, x1, y1, z1, WATERM, tone, .5)}</g>`);
+  wb(TX - 12.1, TYv(.9), TX + 12.1, TYv(17.6));
+  for (const sg of [1, -1]){ const [a, b] = xs(sg, 8.9, 12.1); wb(a, TYv(17.6), b, TYv(51.6)); }
+  K.bx(TX - 10.4, TYv(50.4), TDK - .2, TX - 9.2, TYv(51.8), TDK + 1.2, BRASS, tone, .6);
+}
+function towerMech(st){
+  const z1 = towerWaterZ(st), ga = 38*Math.PI/180, fc = [TWX + 10.5*Math.cos(ga), TWY + 10.5*Math.sin(ga)];
+  let s = rod([TWX, TWY, TK0], [TWX, TWY, 63.5], .9, st.pump ? WATERM : SOOT, tone, .7) + rod([TWX, TWY, 63.5], [TWX + 2.4, TWY, 63.5], .9, st.pump ? WATERM : SOOT, tone, .7);
+  if (st.pump) s += fill(pd(on(PX(TWX + 2.6), ellUV(TWY, 63.5, .8, .8, 10))), WATERM.l);
+  s += cylX(TWX + TKR - 2, TWX + TKR + .2, TWY, PIV[2], 1.5, st.flow > .05 ? matOf('#f6d27a') : BRASS, tone, .7, 16);
+  s += `<g opacity=".55">${cyl(TWX, TWY, TK0 + .4, z1, TKR - .5, WATERM, tone, .8, 40)}</g>`;
+  s += cyl(fc[0], fc[1], z1 - .4, z1 + .5, 1.3, TIMBER, tone, .6, 14);
+  const ip = [TWX + 13*Math.cos(ga), TWY + 13*Math.sin(ga), 66.4], op = [TWX + 14.6*Math.cos(ga), TWY + 14.6*Math.sin(ga), 66.2];
+  s += strk([[fc[0], fc[1], z1 + .5], ip, op], INK, .45) + strk([[fc[0], fc[1], z1 + .5], ip, op], '#c9b07a', .25);
+  return s;
+}
+
+/* ---------- les bûches en vol, la fumée ---------- */
+function logPose(lg){
+  const t = Math.min(1, lg.t), c = lerp3(lg.from, lg.to, t); c[2] += lg.arc*4*t*(1 - t);
+  const a = lg.a0 + (lg.a1 - lg.a0)*ease(t), h = LOGL/2, d = [Math.cos(a), Math.sin(a), 0];
+  const A = [c[0] - d[0]*h, c[1] - d[1]*h, c[2]], B = [c[0] + d[0]*h, c[1] + d[1]*h, c[2]];
+  if (lg.kind === 'fire'){ const door = LY(16.3); if (B[1] > door) B[1] = door; if (B[1] - A[1] < 1) return null; }
+  return [A, B];
+}
+function logItems(st, inTrain){
+  const out = [];
+  for (const lg of st.logs){ const p = logPose(lg); if (!p) continue; const b = rbox(p[0], p[1], LOGR), outside = b[0][0] > 72.5;
+    if (outside !== !inTrain) continue; out.push({ box: b, svg: logSvg(p[0], p[1]) }); }
+  return out;
+}
+function puffItems(st){
+  // each puff is a little inked cloud of three circles (outline drawn under the fills, so only its edge shows)
+  return st.puffs.map(p => { const [X, Y] = P(p.x, p.y, p.z), r = p.r*1.22, a = Math.sqrt(Math.max(0, 1 - p.age/p.life));
+    const cs = [[-.42, .05, .68], [.4, -.12, .64], [0, -.42, .6], [.05, .2, .62]].map(([dx, dy, k]) => [X + dx*r, Y + dy*r, k*r]);
+    const c = (st2) => cs.map(([x, y, rr]) => `<circle cx="${f(x)}" cy="${f(y)}" r="${f(rr)}" ${st2}/>`).join('');
+    return { box: [[p.x - p.r, p.y - p.r, p.z - p.r], [p.x + p.r, p.y + p.r, p.z + p.r]],
+      svg: `<g opacity="${f(.92*a)}">${c(`fill="${INK}" stroke="${INK}" ${mw(.7)}`)}${c(`fill="${p.col}"`)}</g>` }; });
+}
+function puff(st, at, kind){
+  const S0 = { smoke: { r: 3.2, life: 2.6, col: '#b8b1a6', v: [-2.5, 0, 12], g: 4 }, dark: { r: 3.2, life: 2.8, col: '#8b8379', v: [-2, 0, 10], g: 4 },
+    steam: { r: 1, life: 1.1, col: '#fbfaf6', v: [0, 0, 7], g: 2.2 }, cock: { r: .9, life: .9, col: '#fbfaf6', v: [0, 0, 1.5], g: 2.6 } }[kind.k || kind];
+  const v = kind.v || S0.v;
+  st.puffs.push({ x: at[0], y: at[1], z: at[2], r: S0.r, life: S0.life, col: S0.col, vx: v[0] + (Math.random() - .5)*1.2, vy: v[1] + (Math.random() - .5)*1.2, vz: v[2], g: S0.g, age: 0 });
+}
+
+/* ---------- les ombres du train ---------- */
+function trainShadow(){
+  const lp = [];
+  for (const dx of [-13.5, 13.5]) for (const u of [-1.5, 18.5]) lp.push(Lp(dx, u, CABT + 1.9), Lp(dx, u, RT));
+  for (const dx of [-12.5, 12.5]) for (const u of [18, 74]) lp.push(Lp(dx, u, RT), Lp(dx*.45, u, BTOP));
+  lp.push(Lp(0, 86, 6.6), Lp(-12, 75.5, 13.4), Lp(12, 75.5, 13.4), Lp(0, 46, 40.2), Lp(0, 73, 40.4));
+  for (let i = 0; i < 12; i++){ const a = i/12*2*Math.PI; lp.push(Lp(5.6*Math.cos(a), 68 + 5.6*Math.sin(a), 47.2)); }
+  const tp = []; for (const dx of [-12.5, 12.5]) for (const v of [0, TLEN]) for (const z of [RT, TTOP]) tp.push(Tp(dx, v, z));
+  return castShadow(lp, TIE) + castShadow(tp, TIE);
+}
+
+/* ---------- les étiquettes ---------- */
+// pills in two columns pinned to the frame's edges (the scene is long, so the core helper finds no room beside it):
+// the half of the labels further left on screen goes left, under the buttons; the rest right, under the numbers.
+// Each column is sorted top to bottom so leaders never cross. On a phone they are numbered badges, as in the core.
+function lcCallouts(items){
+  if (!items.length) return '';
+  const k = INK_K, u = window.LBL_U ? LBL_U() : 0, fs = u ? 10*u : 8.6*k, hgt = u ? 17*u : fs*1.8, gap = hgt + (u ? 3*u : 3*k);
+  const svgEl = document.getElementById('fig'), vb = svgEl.viewBox.baseVal, ctm = svgEl.getScreenCTM();
+  const below = id => { const el = document.getElementById(id); if (!el || !ctm || u) return -1e9;
+    const r = el.getBoundingClientRect(); return new DOMPoint(r.left, r.bottom + 10).matrixTransform(ctm.inverse()).y + hgt/2; };
+  const pts = items.map(it => { const [X, Y] = P(...it.at); return { ...it, X, Y }; }).sort((a, b) => a.X - b.X), half = Math.ceil(pts.length/2);
+  let s = '';
+  for (const [col, side, top] of [[pts.slice(0, half), -1, below('btns')], [pts.slice(half), 1, Math.max(below('stats'), below('xrb'))]]){
+    const t0 = Math.max(vb.y + hgt, top);
+    col.sort((a, b) => a.Y - b.Y);
+    let y = -1e9; for (const c of col){ c.py = Math.max(c.Y, y + gap, t0); y = c.py; }
+    const over = col.length ? col[col.length - 1].py - (vb.y + vb.height - hgt) : 0;
+    if (over > 0){ const room = col[0].py - t0; for (const c of col) c.py -= Math.min(over, room); }
+    for (const c of col){
+      c.n = ((window.__ln || (window.__ln = {}))[c.text] || (__ln[c.text] = Object.keys(__ln).length + 1));
+      const w = u ? hgt*(c.n > 9 ? 1.3 : 1) : c.text.length*fs*.62 + fs*1.5;
+      const px = side < 0 ? vb.x + 3*k + w/2 : vb.x + vb.width - 3*k - w/2, ex = px - side*w/2;
+      s += `<g class="tag${c.on ? ' on' : ''}" data-n="${c.n}" data-t="${c.text}"><path d="M${f(c.X)} ${f(c.Y)}L${f(ex - side*4*k)} ${f(c.py)}L${f(ex)} ${f(c.py)}" fill="none" stroke="${INK}" stroke-width="1"/>`
+        + `<circle cx="${f(c.X)}" cy="${f(c.Y)}" r="${f(1.4*k)}" fill="${INK}"/>`
+        + `<rect x="${f(px - w/2)}" y="${f(c.py - hgt/2)}" width="${f(w)}" height="${f(hgt)}" rx="${f(hgt/2)}" fill="${c.on ? 'var(--accent,#f4b829)' : '#fff4d6'}" stroke="${INK}" stroke-width="1.2"/>`
+        + `<text x="${f(px)}" y="${f(c.py + fs*.36)}" font-size="${f(fs)}" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-weight="800" letter-spacing=".04em" fill="${INK}">${u ? c.n : c.text}</text></g>`; } }
+  return s;
+}
+function surfaceLabels(st){
+  const ga = 70*Math.PI/180, loading = st.loadQ > 0 || st.logs.some(l => l.kind === 'load'), mv = !!st.mv;
+  return [
+    { at: [TWX + TKR*Math.cos(ga), TWY + TKR*Math.sin(ga), 60], text: "CHÂTEAU D'EAU", on: st.pump },
+    { at: spoutPt(st, .7), text: 'MANCHE À EAU', on: st.flow > .1 },
+    { at: [PILE.x1, (PILE.y0 + PILE.y1)/2, Math.max(1, PILE.h*st.pile*.6)], text: 'TAS DE BOIS', on: loading },
+    { at: Tp(12.5, 30, 25), text: 'TENDER', on: st.flow > .1 || loading },
+    { at: Lp(5.7, 68, 46.4), text: 'CHEMINÉE', on: mv },
+    { at: Lp(0, 46, 40.2), text: 'DÔME DE VAPEUR', on: false },
+    { at: Lp(0, 56, 37), text: 'CLOCHE', on: false },
+    { at: Lp(12.5, 12, 33), text: 'CABINE', on: st.feedQ > 0 },
+    { at: Lp(WX1, DRV[1], AZ), text: 'ROUES MOTRICES', on: mv },
+    { at: Lp(12.4, 43, AZ + 1), text: 'BIELLE MOTRICE', on: mv },
+    { at: Lp(14, 66, AZ), text: 'CYLINDRE', on: mv },
+    { at: Lp(0, 84, 8), text: 'CHASSE-BESTIAUX', on: false },
+    { at: Lp(0, 75.4, 38.5), text: 'PHARE', on: false } ];
+}
+function insideLabels(st){
+  const mv = !!st.mv, loading = st.loadQ > 0 || st.logs.some(l => l.kind === 'load'), ga = 38*Math.PI/180;
+  return [
+    { at: Lp(0, 24, 14), text: 'FOYER', on: st.fire > .3 },
+    { at: Lp(3, 50, 26), text: 'TUBES À FUMÉE', on: st.fire > .3 },
+    { at: Lp(-4, 40, 24), text: 'EAU DE LA CHAUDIÈRE', on: false },
+    { at: Lp(0, 46.2, 36.6), text: 'RÉGULATEUR', on: mv },
+    { at: Lp(4.8, 65.4, 24), text: 'TUYAU DE VAPEUR', on: mv },
+    { at: Lp(CYX, PISTON_U, AZ + CYR), text: 'PISTON', on: mv },
+    { at: Lp(0, 68, 28.8), text: 'ÉCHAPPEMENT', on: mv },
+    { at: Lp(-10.5, 6.5, 20), text: 'INJECTEUR', on: mv },
+    { at: Tp(12.1, 30, tWaterZ(st)), text: 'CAISSE À EAU', on: st.flow > .1 },
+    { at: Tp(8, 35, woodTop(st)), text: 'SOUTE À BOIS', on: loading || st.feedQ > 0 },
+    { at: [TWX + 9, TWY + 9, towerWaterZ(st)], text: 'RÉSERVOIR', on: st.flow > .1 || st.pump },
+    { at: [TWX + TKR, TWY, PIV[2] + 1.5], text: 'VANNE', on: st.flow > .1 },
+    { at: [TWX + 10.5*Math.cos(ga), TWY + 10.5*Math.sin(ga), towerWaterZ(st) + .5], text: 'FLOTTEUR', on: st.flow > .1 || st.pump },
+    { at: [TWX, TWY, 20], text: "ARRIVÉE D'EAU", on: st.pump } ];
+}
+
+/* ---------- la scène ---------- */
+function trainList(st, m, xr){
+  const K = kit();
+  runGear(st, m, K, xr); tenderTrucks(st, K); frames(K); woodStack(st, K); spoutParts(st, K, xr);
+  if (xr){ boilerMech(st, K); tenderMech(st, K); }
+  else { locoBody(st, m, K); cabParts(st, m, K); tenderBody(st, m, K); }
+  return [...K.parts, ...logItems(st, true), ...(xr ? [] : puffItems(st))];
+}
+function scene(st, m){
+  SS = st.s; const k = ease(st.xr || 0);
+  let s = `<defs><filter id="lcGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="${f(1.2*INK_K)}"/></filter></defs>`;
+  s += towerShadow() + pileShadow(st) + trackBed() + trainShadow() + railsSvg();
+  const TBOX = [[-1, TWY - 16, 0], [30, TWY + 16, 78]], RBOX = [[30, 0, 0], [72.5, D, 80]];
+  const objs = lcSort([{ box: TBOX, svg: towerSvg(st) }, { box: RBOX, svg: lcSort(trainList(st, m, false)) },
+    { box: [[78, PILE.y0 - 1.2, 0], [91.2, PILE.y1 + 1.2, 22]], svg: act('pile', pileSvg(st)) }, ...logItems(st, false)]);
+  if (k > 0) s += `<g opacity="${f(1 - .62*k)}">${objs}</g><g opacity="${f(k)}">${lcSort([{ box: TBOX, svg: towerMech(st) }, { box: RBOX, svg: lcSort(trainList(st, m, true)) }, ...logItems(st, false)])}</g>`;
+  else s += objs;
+  SS = st.s;
+  s += lcCallouts(k > .6 ? insideLabels(st) : surfaceLabels(st));
+  return s;
+}
+
+/* ---------- le déroulement (un seul état, une seule horloge) ---------- */
+let ui, looping = false;
+const CHUFF = 2*Math.PI*RD/4;
+const fireTarget = st => Math.min(9, 2 + 7*st.fire);
+const loadInFlight = st => st.loadQ + st.logs.filter(l => l.kind === 'load').length;
+function tick(st, dt){
+  st.clock += dt; SS = st.s;
+  // water: lid, spout down, valve open and flowing, valve shut, spout up, lid closed
+  if (st.fill){ st.fillT += dt; const T = st.fillT, next = ph => { st.fill = ph; st.fillT = 0; };
+    if (st.fill === 'open'){ st.hatch = Math.min(1, T/.5); if (T >= .5) next('lower'); }
+    else if (st.fill === 'lower'){ st.spout = Math.min(1, T/1.2); if (T >= 1.2) next('flow'); }
+    else if (st.fill === 'flow'){ st.valve = Math.min(1, T/.3); st.flow = st.valve;
+      const q = Math.min(2300*dt*st.valve, CAP_W - st.water, st.tower); st.water += q; st.tower -= q;
+      if (st.water >= CAP_W - .5 || st.tower <= 1) next('shut'); }
+    else if (st.fill === 'shut'){ st.valve = Math.max(0, 1 - T/.3); st.flow = st.valve; if (T >= .3) next('raise'); }
+    else if (st.fill === 'raise'){ st.spout = Math.max(0, 1 - T/1.2); if (T >= 1.2) next('close'); }
+    else if (st.fill === 'close'){ st.hatch = Math.max(0, 1 - T/.5); if (T >= .5) st.fill = null; } }
+  st.pump = st.flow < .01 && st.tower < CAP_T;
+  if (st.pump) st.tower = Math.min(CAP_T, st.tower + 1200*dt);
+  // wood: one log every quarter second from the pile to the bunker
+  if (st.loadQ > 0){ st.loadT -= dt; if (st.loadT <= 0){ st.loadQ--; st.loadT = .26; st.pile = Math.max(0, st.pile - 1/40);
+    const fl = st.logs.filter(l => l.kind === 'load').length, ph = PILE.h*st.pile, n = st.seq++;
+    st.logs.push({ kind: 'load', t: 0, T: .95, arc: 15, a0: 0, a1: Math.PI/2,
+      from: [(PILE.x0 + PILE.x1)/2, PILE.y0 + 3 + ((n*7) % 11)*2.6, ph + LOGR], to: [TX - 4 + ((n*3) % 5)*2, TYv(24 + ((n*5) % 4)*5), woodTop(st) + (fl + 1)*WMAX/16 + LOGR*.3] }); } }
+  // fire: the door opens, logs go from the front of the bunker into the firebox
+  if (st.feedQ > 0){ st.feedT -= dt; if (st.feedT <= 0 && st.door > .9){ st.feedQ--; st.feedT = .42; st.wood = Math.max(0, st.wood - 1/40);
+    st.logs.push({ kind: 'fire', t: 0, T: .55, arc: 3, a0: Math.PI/2, a1: Math.PI/2, from: [TX + ((st.seq++ % 3) - 1)*2.6, TYv(50.6) - LOGL/2 + 5, woodTop(st) + LOGR], to: [TX, LY(16.3) - LOGL/2, 25] }); } }
+  const doorWant = st.feedQ > 0 || st.logs.some(l => l.kind === 'fire') ? 1 : 0;
+  st.door = Math.max(0, Math.min(1, st.door + Math.sign(doorWant - st.door)*dt/.25));
+  for (const lg of st.logs){ lg.t += dt/lg.T;
+    if (lg.t >= 1){ if (lg.kind === 'load') st.wood = Math.min(1, st.wood + 1/16);
+      else { st.fire = Math.min(1, st.fire + .25); puff(st, Lp(0, 68, 47.4), 'dark'); } } }
+  st.logs = st.logs.filter(l => l.t < 1);
+  // pressure follows the fire; the safety valve blows off when the fire is overfed
+  const tg = fireTarget(st);
+  st.p = st.p < tg ? Math.min(tg, st.p + 1.3*dt) : Math.max(tg, st.p - .6*dt);
+  if (st.safety > 0){ st.safety -= dt; st.safeT = (st.safeT || 0) - dt; if (st.safeT <= 0){ st.safeT = .1; puff(st, Lp(-.9, 44.8, 41.8), 'steam'); puff(st, Lp(.9, 44.8, 41.8), 'steam'); } }
+  // whistle, then the move: wheels, rods, a chuff every quarter turn, cylinder cocks open at the start
+  if (st.whistle > 0){ st.whistle -= dt; st.whT = (st.whT || 0) - dt; if (st.whT <= 0){ st.whT = .09; puff(st, Lp(0, 47.2, 43.2), 'steam'); }
+    if (st.whistle <= 0 && st.go){ st.mv = { ...st.go, from: st.s, t: 0 }; st.go = null; st.chuff = CHUFF*.9; } }
+  if (st.mv){ const mv = st.mv; mv.t = Math.min(1, mv.t + dt/mv.T); const ns = mv.from + (mv.to - mv.from)*ease(mv.t), ds = Math.abs(ns - st.s);
+    st.s = ns; SS = ns; st.chuff += ds; st.chuffK = Math.max(0, (st.chuffK || 0) - dt*4);
+    st.water = Math.max(0, st.water - mv.water*ds/RUN); st.fire = Math.max(.05, st.fire - mv.df*ds/RUN);
+    while (st.chuff >= CHUFF){ st.chuff -= CHUFF; st.chuffK = 1; puff(st, Lp(0, 68, 47.4), 'dark'); }
+    st.smT = (st.smT || 0) - dt; if (st.smT <= 0){ st.smT = .17; puff(st, Lp(0, 68, 47.4), 'smoke'); }
+    if (mv.t < .22){ st.cockT = (st.cockT || 0) - dt; if (st.cockT <= 0){ st.cockT = .08;
+      for (const sg of [1, -1]) for (const u of [CY0, CY1]) puff(st, Lp(sg*(CYX + 1), u, AZ - CYR), { k: 'cock', v: [sg*7, 0, 1] }); } }
+    if (mv.t >= 1){ st.mv = null; if (mv.to === 0) st.pile = Math.min(1, st.pile + .5); } }
+  for (const p of st.puffs){ p.age += dt; p.x += p.vx*dt; p.y += p.vy*dt; p.z += p.vz*dt; p.vz *= 1 - .7*dt; p.vx *= 1 - .4*dt; p.r += p.g*dt; }
+  st.puffs = st.puffs.filter(p => p.age < p.life);
+  return !!(st.fill || st.loadQ || st.feedQ || st.logs.length || st.door > 0 || st.mv || st.go || st.whistle > 0 || st.safety > 0
+    || st.puffs.length || Math.abs(st.p - fireTarget(st)) > .005 || st.tower < CAP_T);
+}
+let SIM = false;                                                       // test fast-forward: no animation loop
+function run(){ if (looping || SIM) return; looping = true;
+  ui.animate(dt => { const busy = tick(ui.st, Math.min(dt, .05)); if (!busy) looping = false; return busy; }); }
+const busyMoving = st => st.mv || st.go;
+function fillWater(st){
+  if (busyMoving(st)) return ui.flash('La locomotive roule encore');
+  if (st.s > .5) return ui.flash("Revenez d'abord sous le château d'eau");
+  if (st.fill) return ui.flash('Le plein est en cours');
+  if (st.water >= CAP_W - 20) return ui.flash("Le tender est déjà plein d'eau");
+  if (st.tower < 300) return ui.flash("La cuve est vide : la pompe la remplit");
+  st.fill = 'open'; st.fillT = 0; run();
+}
+function loadWood(st){
+  if (busyMoving(st)) return ui.flash('La locomotive roule encore');
+  if (st.s > .5) return ui.flash("Le tas de bois est au château d'eau : revenez-y");
+  const fl = loadInFlight(st);
+  if (st.wood + fl/16 >= .99) return ui.flash(fl ? 'Chargement en cours' : 'La soute à bois est pleine');
+  if (st.pile < .02) return ui.flash('Le tas de bois est vide');
+  st.loadQ += Math.min(Math.ceil((1 - st.wood)*16 - fl - .01), Math.floor(st.pile*40 + 1e-6)); st.loadT = 0; run();
+}
+function feedFire(st){
+  if (st.feedQ > 0) return;
+  if (st.wood < 1/40 - 1e-6) return ui.flash("Plus de bois dans le tender : chargez-en d'abord");
+  if (st.fire >= .99){ st.safety = 1.6; run(); return ui.flash('Le feu est au maximum : la soupape lâche la vapeur en trop'); }
+  st.feedQ = Math.min(3, Math.floor(st.wood*40 + 1e-6)); st.feedT = 0; run();
+}
+function depart(st){
+  if (busyMoving(st)) return;
+  if (st.s > .5) return ui.flash("La locomotive est déjà partie : ramenez-la au château d'eau");
+  if (st.fill) return ui.flash("Attendez la fin du plein d'eau");
+  if (loadInFlight(st)) return ui.flash('Attendez la fin du chargement du bois');
+  if (st.p < 6) return ui.flash(`Pression trop basse (${fr1(st.p)} bar) : nourrissez le feu`);
+  if (st.water < 2500) return ui.flash("Pas assez d'eau dans le tender : faites le plein");
+  st.whistle = .9; st.go = { to: RUN, T: 4.6, water: 2300, df: .35 }; run();
+}
+function goBack(st){
+  if (busyMoving(st)) return;
+  if (st.s < .5) return ui.flash("La locomotive est déjà au château d'eau");
+  if (st.p < 4) return ui.flash(`Pression trop basse (${fr1(st.p)} bar) : nourrissez le feu`);
+  if (st.water < 700) return ui.flash("Plus assez d'eau pour rouler");
+  st.whistle = .45; st.go = { to: 0, T: 4.2, water: 700, df: .15 }; run();
+}
+
+ui = mountFigure({
+  fig: '01', turn: 'full', title: 'Locomotive à vapeur',
+  size: [W, D, H], palette: 'tomato', credit: true,
+  state: { s: 0, water: 1600, wood: .15, pile: 1, tower: CAP_T, fire: .25, p: 3.75, spout: 0, hatch: 0, valve: 0, flow: 0, fill: null, fillT: 0,
+    loadQ: 0, loadT: 0, feedQ: 0, feedT: 0, door: 0, logs: [], puffs: [], mv: null, go: null, whistle: 0, safety: 0, chuff: 0, clock: 0, seq: 0, pump: false },
+  scene,
+  stats: st => [
+    { label: 'Eau du tender', value: frInt(Math.round(st.water/10)*10) + ' L' },
+    { label: 'Bois', value: fr1(st.wood*CAP_B) + ' t', small: true },
+    { label: 'Pression', value: fr1(st.p) + ' bar', small: true } ],
+  buttons: [
+    { label: "Faire le plein d'eau", onClick: st => fillWater(st) },
+    { label: 'Charger le bois', onClick: st => loadWood(st) },
+    { label: 'Nourrir le feu', onClick: st => feedFire(st) },
+    { label: 'Siffler et partir', onClick: st => depart(st) },
+    { label: "Revenir au château d'eau", onClick: st => goBack(st) } ],
+  acts: { spout: st => fillWater(st), pile: st => loadWood(st), door: st => feedFire(st) },
+  params: (st, q) => {
+    for (const k of ['s', 'water', 'wood', 'pile', 'tower', 'fire', 'p', 'spout', 'hatch', 'door']) if (q.has(k)) st[k] = +q.get(k);
+    if (q.get('flow') === '1'){ st.spout = st.hatch = st.valve = st.flow = 1; }
+    if (q.has('fire') && !q.has('p')) st.p = fireTarget(st);
+  },
+});
+xrMount(() => ui, () => '');
+// tests: ?sim=Faire@0.3,Charger@7&at=9 presses the buttons at those times (s) in a fast simulation, then draws once;
+// ?bench=1 times a full redraw (<html data-bench="ms">); ?shot=1 hides the page around the drawing
+(() => { const q = new URLSearchParams(location.search), st = ui.st;
+  if (q.has('at')){ const acts = { faire: fillWater, charger: loadWood, nourrir: feedFire, siffler: depart, revenir: goBack };
+    const ev = (q.get('sim') || '').split(',').filter(Boolean).map(s => { const [w, t] = s.split('@'); return [acts[w.toLowerCase()], +t]; }).sort((a, b) => a[1] - b[1]);
+    SIM = true; let t = 0, i = 0; const end = +q.get('at');
+    while (t < end){ while (i < ev.length && ev[i][1] <= t) ev[i++][0](st); tick(st, 1/60); t += 1/60; }
+    SIM = false; ui.render(); }
+  if (q.get('shot') === '1'){ const cs = document.createElement('style');   // ?shot=1: the drawing alone, for thumbnails
+    cs.textContent = '.actions,#stats,.vset,.zchip,body>header,.controls,.made-with,.lgd,.toast{visibility:hidden!important}'; document.head.appendChild(cs); }
+  if (q.get('bench') === '1'){ const t0 = performance.now(); for (let i = 0; i < 5; i++) ui.render(); document.documentElement.dataset.bench = ((performance.now() - t0)/5).toFixed(1); }
+})();
+/* ---------- la page en français ---------- */
+(() => {
+  const tr = { 'Hand-drawn wobble': 'Trait tremblé', 'Colour': 'Couleur', 'View': 'Vue', 'Labels': 'Étiquettes' };
+  document.querySelectorAll('.ctl label').forEach(l => { if (tr[l.textContent]) l.textContent = tr[l.textContent]; });
+  const set = (id, t) => { const e = document.getElementById(id); if (e) e.textContent = t; };
+  set('vreset', 'Vue de face'); set('vspin', 'Tourner'); set('xrb', 'Transparence'); set('lblb', 'Étiquettes');
+  const pn = { mustard: 'moutarde', tomato: 'tomate', mint: 'menthe', cobalt: 'cobalt', blush: 'rose' };
+  document.querySelectorAll('#pals .sw').forEach(b => { if (pn[b.title]) b.title = pn[b.title]; });
+  const mwl = document.querySelector('.made-with a'); if (mwl) mwl.textContent = 'Fait avec Colorfigures';
+  // in the gallery (figures/…), a way back to all the figures, at the top and at the bottom
+  if (/\/figures\/[^/]*$/.test(location.pathname)){
+    const hd = document.querySelector('body > header'); if (hd) hd.insertAdjacentHTML('beforeend', '<span><a href="../" style="color:inherit">← Toutes les figures</a></span>');
+    if (mwl) mwl.insertAdjacentHTML('beforebegin', '<a href="../">← Toutes les figures</a> · '); }
+  addEventListener('load', () => setTimeout(() => {
+    for (const [c, t] of [['.zm', 'Dézoomer'], ['.zp', 'Taille normale'], ['.zi', 'Zoomer']]){ const e = document.querySelector(c); if (e) e.setAttribute('aria-label', t); } }, 0));
+})();
+</script></body></html>
