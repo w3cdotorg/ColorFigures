@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ColorFigures</title>
-<meta name="description" content="Des objets du quotidien encrés à la main, en isométrie, qu'on fait tourner, qu'on regarde de l'intérieur et qu'on fait fonctionner. Dessinés par Claude avec le skill Colorfigures.">
+<meta name="description" content="Des objets du quotidien dessinés comme à l'encre, en perspective isométrique, que l'on peut faire pivoter, explorer de l'intérieur et voir en fonctionnement. Réalisés par Claude avec Colorfigures.">
 <meta property="og:title" content="ColorFigures">
-<meta property="og:description" content="Des objets du quotidien encrés à la main, qu'on fait tourner, qu'on regarde de l'intérieur et qu'on fait fonctionner.">
+<meta property="og:description" content="Des objets du quotidien dessinés comme à l'encre, à faire pivoter, à explorer de l'intérieur et à voir en fonctionnement.">
 <meta property="og:image" content="https://w3cdotorg.github.io/ColorFigures/thumbs/locomotive-a-vapeur.jpg">
 <meta property="og:type" content="website">
 <meta name="color-scheme" content="light">
@@ -46,7 +46,7 @@
   .btn:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--ink)}
   .btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--ink)}
   .btn.primary{background:var(--accent)}
-  .btn:focus-visible,.card:focus-visible,.copy:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+  .btn:focus-visible,.card:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
 
   /* hero */
   .hero{display:grid;grid-template-columns:1fr 1.15fr;gap:40px;align-items:center;padding:24px 0 64px}
@@ -93,23 +93,12 @@
   .result img{width:140px;height:105px;object-fit:cover;border-radius:8px;border:1px solid var(--rule)}
   .result b{font:700 15px/1.3 var(--mono);display:block;color:var(--ink)} .result span span{color:var(--muted);font-size:14px}
 
-  /* make your own */
-  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:28px;counter-reset:s}
-  .step{counter-increment:s}
-  .step h3{font-size:16px;margin:0 0 8px;display:flex;gap:10px;align-items:center}
-  .step h3::before{content:counter(s);display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--ink);color:var(--paper);font-size:13px;flex:none}
-  .step p{margin:0;color:var(--muted);font-size:15px}
-  .code{display:flex;align-items:center;gap:12px;margin-top:22px;background:#1f1b15;color:#f2efe7;border-radius:12px;padding:10px 10px 10px 18px}
-  .code code{flex:1;min-width:0;overflow-x:auto;white-space:pre;font:13px/1.55 var(--mono);padding:6px 0}
-  .copy{flex:none;font:700 12px/1 var(--mono);color:var(--ink);background:var(--mustard);border:0;border-radius:999px;padding:9px 13px;cursor:pointer}
-  .note{font-size:14px;color:var(--muted);margin-top:12px}
-
   footer{border-top:1px solid var(--rule);padding:32px 0 48px;color:var(--muted);font-size:14px}
   footer p{margin:0 0 8px;max-width:52em}
 
   @media (max-width:820px){
     .hero{grid-template-columns:1fr;gap:28px;padding-bottom:48px}
-    .three,.steps{grid-template-columns:1fr}
+    .three{grid-template-columns:1fr}
     .flow{grid-template-columns:1fr}
     .arrow{transform:rotate(90deg);justify-self:center}
   }
@@ -131,49 +120,49 @@
     </a>
     <nav>
       <a href="#figures">Les figures</a>
-      <a href="#faire">En faire une</a>
+      <a href="#faire">Créer les vôtres</a>
       <a href="https://github.com/w3cdotorg/ColorFigures">GitHub ↗</a>
     </nav>
   </header>
 
   <div class="hero">
     <div>
-      <p class="kicker">Objets dessinés · tournants · qui marchent</p>
+      <p class="kicker">Illustrations interactives</p>
       <h1><span>ColorFigures</span></h1>
-      <p class="lead">Des objets du quotidien, encrés à la main et en isométrie, qu'on fait tourner, qu'on regarde de l'intérieur et qu'on fait fonctionner pour de vrai.</p>
-      <p class="sub">Chaque figure est une seule page web, dessinée par Claude avec le skill Colorfigures. Rien à installer, aucun compte : on l'ouvre et on appuie sur les boutons.</p>
+      <p class="lead">Des objets du quotidien dessinés comme à l'encre, en perspective isométrique, que l'on peut faire pivoter, explorer de l'intérieur et voir en fonctionnement.</p>
+      <p class="sub">Chaque figure est une page web autonome, réalisée par Claude à l'aide de Colorfigures, un module de compétences (<em>skill</em>) conçu par April Zhu. Aucune installation ni aucun compte ne sont nécessaires : il suffit d'ouvrir la page et d'utiliser les boutons.</p>
       <div class="btns">
         <a class="btn primary" href="figures/locomotive-a-vapeur.html">▶ Ouvrir la locomotive</a>
-        <a class="btn" href="#figures">Toutes les figures ↓</a>
+        <a class="btn" href="#figures">Voir les figures ↓</a>
       </div>
     </div>
     <a class="shot" href="figures/locomotive-a-vapeur.html" aria-label="Ouvrir la locomotive à vapeur">
-      <img src="thumbs/locomotive-a-vapeur.jpg" width="1120" height="840" alt="Une locomotive à vapeur rouge et bleue part du château d'eau en fumant, son tender chargé de bois, à côté d'un tas de bûches.">
+      <img src="thumbs/locomotive-a-vapeur.jpg" width="1120" height="840" alt="Une locomotive à vapeur rouge et bleue quitte le château d'eau en fumant, son tender chargé de bois, à côté d'un tas de bûches.">
       <img class="alt" src="thumbs/locomotive-a-vapeur-dedans.jpg" width="1120" height="840" alt="" aria-hidden="true">
-      <span class="badge"><span class="off">Survolez pour voir dedans</span><span class="on">Vue en transparence</span></span>
+      <span class="badge"><span class="off">Survolez pour voir l'intérieur</span><span class="on">Vue en transparence</span></span>
     </a>
   </div>
 </div>
 
 <section>
   <div class="wrap">
-    <p class="kicker">Ce qu'on peut faire</p>
-    <h2>Tourner, regarder dedans, faire marcher</h2>
+    <p class="kicker">Prise en main</p>
+    <h2>Faire pivoter, explorer l'intérieur, voir en fonctionnement</h2>
     <div class="three">
       <div class="tile">
         <svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="17" fill="#fbd9cf" stroke="#231e16" stroke-width="2"/><path d="M12 22a10 10 0 0 1 17-7" fill="none" stroke="#231e16" stroke-width="2.4" stroke-linecap="round"/><path d="M29 9v6h-6" fill="none" stroke="#231e16" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 22a10 10 0 0 1-17 7" fill="none" stroke="#231e16" stroke-width="2.4" stroke-linecap="round"/></svg>
-        <h3>Tourner</h3>
-        <p>Faites glisser la figure pour en faire le tour, ou appuyez sur « Tourner ». Le dos, les côtés, le dessous : tout est dessiné.</p>
+        <h3>Faire pivoter</h3>
+        <p>Faites glisser la figure pour en faire le tour, ou lancez la rotation avec le bouton « Faire pivoter ». L'arrière, les côtés et le dessous sont dessinés, eux aussi.</p>
       </div>
       <div class="tile">
         <svg viewBox="0 0 44 44" aria-hidden="true"><rect x="7" y="9" width="30" height="26" rx="5" fill="#cfe9f0" stroke="#231e16" stroke-width="2" stroke-dasharray="4 3"/><circle cx="18" cy="24" r="5" fill="#ef6a4c" stroke="#231e16" stroke-width="2"/><circle cx="28" cy="20" r="3.5" fill="#f4b829" stroke="#231e16" stroke-width="2"/><path d="M22 23l3-2" stroke="#231e16" stroke-width="2"/></svg>
-        <h3>Voir dedans</h3>
-        <p>Le bouton « Transparence » rend l'enveloppe fantôme : le vrai mécanisme apparaît, et les « Étiquettes » nomment chaque pièce.</p>
+        <h3>Explorer l'intérieur</h3>
+        <p>Le bouton « Transparence » estompe l'enveloppe de l'objet pour révéler son mécanisme. Le bouton « Étiquettes » nomme ensuite chacune des pièces.</p>
       </div>
       <div class="tile">
         <svg viewBox="0 0 44 44" aria-hidden="true"><rect x="6" y="14" width="32" height="16" rx="8" fill="#93d3b0" stroke="#231e16" stroke-width="2"/><path d="M19 17.5v9l8-4.5z" fill="#231e16"/></svg>
-        <h3>Faire marcher</h3>
-        <p>Les boutons suivent les vraies étapes, dans l'ordre. Les pièces bougent le long de leur vrai chemin, et les pièces en action s'allument.</p>
+        <h3>Voir en fonctionnement</h3>
+        <p>Les boutons reprennent les étapes réelles, dans l'ordre où on les effectue. Chaque pièce suit son véritable trajet, et celles qui sont en action s'allument.</p>
       </div>
     </div>
   </div>
@@ -181,25 +170,25 @@
 
 <section id="figures">
   <div class="wrap">
-    <p class="kicker">La collection</p>
+    <p class="kicker">Collection</p>
     <h2>Les figures</h2>
-    <p class="sub">Survolez une figure pour voir son mécanisme, cliquez pour jouer avec. Elles fonctionnent aussi sur téléphone.</p>
+    <p class="sub">Survolez une vignette pour découvrir le mécanisme, puis cliquez pour manipuler la figure. Les figures s'utilisent également sur téléphone.</p>
     <div class="grid">
       <a class="card" href="figures/locomotive-a-vapeur.html">
         <span class="shot">
-          <img src="thumbs/locomotive-a-vapeur.jpg" width="1120" height="840" loading="lazy" alt="Locomotive à vapeur au château d'eau, à côté d'un tas de bois.">
+          <img src="thumbs/locomotive-a-vapeur.jpg" width="1120" height="840" loading="lazy" alt="Locomotive à vapeur au château d'eau, à côté d'un tas de bûches.">
           <img class="alt" src="thumbs/locomotive-a-vapeur-dedans.jpg" width="1120" height="840" loading="lazy" alt="" aria-hidden="true">
-          <span class="badge"><span class="off">▶ Jouer</span><span class="on">Transparence</span></span>
+          <span class="badge"><span class="off">▶ Ouvrir</span><span class="on">Transparence</span></span>
         </span>
         <span class="body">
           <span class="num">FIG. 01</span>
           <h3>Locomotive à vapeur</h3>
-          <p>Une 4-4-0 au bois des années 1860 fait le plein d'eau au château d'eau, charge son bois, chauffe son foyer et repart en soufflant.</p>
+          <p>Une locomotive 4-4-0 à bois des années 1860 fait le plein d'eau au château d'eau, charge son bois, alimente son foyer, puis repart.</p>
           <span class="go">Ouvrir la figure →</span>
         </span>
       </a>
       <div class="card soon" aria-hidden="true">
-        <span><b>La suivante arrive…</b>Un objet de tous les jours, à tourner et à démonter.</span>
+        <span><b>Prochaine figure</b>Un autre objet du quotidien, bientôt à faire pivoter et à explorer.</span>
       </div>
     </div>
   </div>
@@ -207,15 +196,15 @@
 
 <section>
   <div class="wrap">
-    <p class="kicker">Comment elles naissent</p>
-    <h2>Une phrase, un objet qui marche</h2>
-    <p class="sub">On décrit l'objet en une phrase. Claude cherche comment il fonctionne vraiment, le modélise en 3D pièce par pièce, puis le vérifie sous tous les angles.</p>
+    <p class="kicker">Démarche</p>
+    <h2>De la demande à la figure</h2>
+    <p class="sub">Tout part d'une demande formulée en une phrase. Claude se documente sur le fonctionnement réel de l'objet, le modélise en 3D pièce par pièce, puis vérifie le rendu sous tous les angles.</p>
     <div class="flow">
       <p class="prompt">Peux-tu me faire une locomotive à vapeur, en train de charger de l'eau et du bois, sur des rails de chemin de fer ? En français.</p>
       <span class="arrow" aria-hidden="true">→</span>
       <a class="result" href="figures/locomotive-a-vapeur.html">
         <img src="thumbs/locomotive-a-vapeur.jpg" width="140" height="105" loading="lazy" alt="">
-        <span><b>Locomotive à vapeur ↗</b><span>5 boutons : plein d'eau, bois, feu, départ, retour. Foyer, tubes, pistons et réservoirs visibles en transparence.</span></span>
+        <span><b>Locomotive à vapeur ↗</b><span>Cinq étapes : plein d'eau, chargement du bois, alimentation du feu, départ et retour. En transparence : foyer, tubes à fumée, pistons et réservoirs.</span></span>
       </a>
     </div>
   </div>
@@ -223,32 +212,19 @@
 
 <section id="faire">
   <div class="wrap">
-    <p class="kicker">À vous</p>
+    <p class="kicker">Pour aller plus loin</p>
     <h2>Faire vos propres figures</h2>
-    <p class="sub">Les figures sont créées avec <a href="https://april-zhu.com/colorfigures">Colorfigures</a>, un skill pour Claude imaginé par April Zhu.</p>
-    <div class="steps">
-      <div class="step"><h3>Installer</h3><p>Dans Claude Code, collez la commande ci-dessous dans le Terminal, puis redémarrez Claude Code.</p></div>
-      <div class="step"><h3>Demander</h3><p>Décrivez un objet en une phrase : « Fais-moi une Colorfigure d'un grille-pain qui éjecte ses tartines ».</p></div>
-      <div class="step"><h3>Ouvrir</h3><p>Claude enregistre un fichier <span class="mono">.html</span>. Ouvrez-le dans le navigateur et appuyez sur les boutons.</p></div>
-    </div>
-    <div class="code" id="cmd"><code>mkdir -p ~/.claude/skills &amp;&amp; curl -fsSL https://april-zhu.com/colorfigures/colorfigures.tar.gz | tar -xz -C ~/.claude/skills</code><button class="copy" type="button" data-copy="mkdir -p ~/.claude/skills &amp;&amp; curl -fsSL https://april-zhu.com/colorfigures/colorfigures.tar.gz | tar -xz -C ~/.claude/skills">Copier</button></div>
-    <p class="note">Pour Claude.ai et les autres façons de l'installer, voir <a href="https://april-zhu.com/colorfigures">la page du skill</a>.</p>
+    <p class="sub">Colorfigures a été imaginé par April Zhu. Sa page présente la démarche, de nombreux exemples et la façon d'installer le module dans Claude.</p>
+    <div class="btns"><a class="btn" href="https://april-zhu.com/colorfigures">Découvrir Colorfigures sur le site d'April Zhu ↗</a></div>
   </div>
 </section>
 
 <footer>
   <div class="wrap">
-    <p>Figures dessinées par Claude avec le skill <a href="https://april-zhu.com/colorfigures">Colorfigures</a> d'April Zhu, lui-même construit sur <a href="https://isoglow.dev">ISO-GLOW</a> (April Zhu) et <a href="https://github.com/MrBongoC/ai-iso-skill">iso-figure</a> (Tolga Cohce).</p>
-    <p>Code source et sources des figures sur <a href="https://github.com/w3cdotorg/ColorFigures">GitHub</a> · Licence MIT.</p>
+    <p>Figures réalisées par Claude avec <a href="https://april-zhu.com/colorfigures">Colorfigures</a> (April Zhu), qui s'appuie sur <a href="https://isoglow.dev">ISO-GLOW</a> (April Zhu) et <a href="https://github.com/MrBongoC/ai-iso-skill">iso-figure</a> (Tolga Cohce).</p>
+    <p>Le code de la page et les sources des figures sont disponibles sur <a href="https://github.com/w3cdotorg/ColorFigures">GitHub</a>, sous licence MIT.</p>
   </div>
 </footer>
 
-<script>
-  for (const b of document.querySelectorAll('.copy')) b.addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copié !'; }
-    catch (e) { b.textContent = 'Sélectionnez le texte'; }
-    setTimeout(() => { b.textContent = 'Copier'; }, 1600);
-  });
-</script>
 </body>
 </html>

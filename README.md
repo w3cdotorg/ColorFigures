@@ -1,12 +1,12 @@
 # ColorFigures
 
-Des objets du quotidien, encrés à la main et en isométrie, qu'on fait tourner, qu'on regarde de l'intérieur et
-qu'on fait fonctionner. Chaque figure est une seule page web autonome, dessinée par Claude avec le skill
-[Colorfigures](https://april-zhu.com/colorfigures) d'April Zhu.
+Des objets du quotidien dessinés comme à l'encre, en perspective isométrique, que l'on peut faire pivoter, explorer
+de l'intérieur et voir en fonctionnement. Chaque figure est une page web autonome, réalisée par Claude à l'aide de
+[Colorfigures](https://april-zhu.com/colorfigures), un module de compétences (*skill*) conçu par April Zhu.
 
 **Voir la galerie : https://w3cdotorg.github.io/ColorFigures/**
 
-| Fig. | Figure | Ce qu'on peut faire |
+| Fig. | Figure | Étapes et mécanisme |
 | --- | --- | --- |
 | 01 | [Locomotive à vapeur](https://w3cdotorg.github.io/ColorFigures/figures/locomotive-a-vapeur.html) | Faire le plein d'eau au château d'eau, charger le bois, nourrir le feu, siffler et partir, revenir. En transparence : foyer, tubes à fumée, régulateur, pistons, injecteur, caisse à eau du tender, réservoir et flotteur du château d'eau. |
 
