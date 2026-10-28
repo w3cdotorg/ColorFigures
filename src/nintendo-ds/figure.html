@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nintendo DS</title></head><body>
+<script src="core.js"></script>
+<script>
+/* ============================================================
+   Fig. 05 · Nintendo DS (DS Lite) et cartouche Pokémon
+   ------------------------------------------------------------
+   How it really works (one button per step):
+   1. Ouvrir la console: the top half turns on its hinge barrel (closed to ~150°). Lying flat, the bottom half shows the
+      touch screen, the D-pad, A B X Y, START and SELECT; the top half the second screen and the two speakers.
+   2. Insérer la cartouche: the DS game card is taken from its case, turned label side down (Nintendo: "label facing the
+      bottom of the system") and pushed contacts first into SLOT-1 on the back edge, until it clicks. Only with the
+      power off.
+   3. Allumer: the power switch on the right side is slid and springs back; the power light turns green, both screens
+      light up with the health and safety warning ("touch the touch screen to continue").
+   4. Lancer le jeu: the stylus comes out of its silo (right side, along the back edge); a touch on the warning opens
+      the DS menu, a touch on the game card's panel starts the game: the console reads it from the card (contacts,
+      SLOT-1 connector, main board, ribbon to the top screen); logo, then the title screen.
+   5. Appuyer sur START: the game begins in its first town; the D-pad then walks the hero.
+   Closing the lid while it is on puts the console to sleep (screens off, the power light blinks).
+   Kept at the level of whole modules on purpose: no processor or memory chips.
+
+   Parts list (1 unit = 1 mm; DS Lite 133 x 74 x 21.5 closed, screens 62 x 46 = 256 x 192 pixels):
+   desk: wooden desk top, the game's case (closed, cover art), the game card lying on it.
+   bottom half: body (rounded, four small feet), touch screen and frame, D-pad, A B X Y, START, SELECT, power and charge
+         lights, microphone, hinge cradle; back: SLOT-1, power socket, L and R; front: SLOT-2 (Game Boy Advance) with its
+         cover, headphone and microphone jacks, volume slider; right side: power switch, stylus silo.
+   top half: body, hinge barrel, top screen and frame, two speaker grilles, logo on the cover.
+   inside the bottom half: main board, battery, SLOT-1 connector (rails and contacts), SLOT-2 connector, touch screen
+         module, button contact pads, power switch, L / R switches, stylus in its silo, microphone, ribbon cable.
+   inside the top half: top screen module, two speakers, the ribbon cable through the hinge.
+   ============================================================ */
+
+/* ---------- dimensions ---------- */
+const DX = 205, DY = 325, BZ = 12;                                   // desk top: depth (x), width (y), thickness
+const LX0 = 100, LX1 = 174, YM = 95, LY0 = YM - 66.5, LY1 = YM + 66.5; // console footprint, 74 x 133
+const ZB0 = BZ + .8, ZD = ZB0 + 10.4, ZK = ZD + 1.4;                 // bottom half: underside, top face, top of its buttons
+const LT = 10.4, HX = LX0 + 5.3, HZ = ZK + .1 + LT/2, LL = LX1 - HX, LID_MAX = 150*Math.PI/180;
+const SCW = 62, SCH = 46, BSX0 = 116, TS0 = 15, TS1 = TS0 + SCH;      // screens; touch screen's back edge; top screen on the lid (s)
+const DP = [134, YM + 48], AB = [134, YM - 48];                       // D-pad and A B X Y centres
+const ABXY = [['X', -7.2, 0], ['B', 7.2, 0], ['Y', 0, 7.2], ['A', 0, -7.2]];
+const STS = [['start', 151, YM - 41], ['select', 157.5, YM - 41]];
+const SLOT = [YM + 5, YM + 40], ZS0 = ZB0 + 1.9, CA = 33, CB = 35, CE = 3.8;   // SLOT-1 opening (y), card bottom, card size
+const CIN = [LX0 + 15, YM + 22.5, ZS0 + CE/2];                       // the card's centre once in (1.5 mm stays out)
+const SX = 104.5, SZ = ZB0 + 8.1, SLEN = 82;                         // stylus silo axis, stylus length
+const CASE = [50, 187, 183, 308, 14];                                // game case x0 x1 y0 y1 thickness
+const CON = [158, 222, BZ + CASE[4] + CE/2 + .02];                   // the card lying on the case
+const SCRF = '#24272b', OFF = '#2e3433';
+const UIF = 'system-ui,-apple-system,&quot;Segoe UI&quot;,Roboto,sans-serif', PXF = 'ui-monospace,Menlo,Consolas,monospace', BIGF = '&quot;Arial Black&quot;,Impact,system-ui,sans-serif';
+const deckTop = on(PZ(BZ), rrUV(0, 0, DX, DY, 12));
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+/* ---------- small geometry helpers ---------- */
+const lidTh = st => LID_MAX*ease(st.lid);
+const lidF = th => { const c = Math.cos(th), s = Math.sin(th); return { sd: [c, 0, s], td: [-s, 0, c] }; };
+const LP = (F, s, y, t) => [HX + s*F.sd[0] + t*F.td[0], y, HZ + s*F.sd[2] + t*F.td[2]];
+const LUV = [...arcUV(LL - 8, LY0 + 8, 8, -90, 0), ...arcUV(LL - 8, LY1 - 8, 8, 0, 90), ...arcUV(1.5, LY1 - 1.5, 1.5, 90, 180, 3), ...arcUV(1.5, LY0 + 1.5, 1.5, 180, 270, 3)];
+const lidRings = F => [LUV.map(([s, y]) => LP(F, s, y, -LT/2)), LUV.map(([s, y]) => LP(F, s, y, LT/2))];
+const BR0 = on(PZ(ZB0), rrUV(LX0 + 2, LY0 + 2, LX1 - 2, LY1 - 2, 6)), BR1 = on(PZ(ZB0 + 1.6), rrUV(LX0, LY0, LX1, LY1, 8)), BR2 = on(PZ(ZD), rrUV(LX0, LY0, LX1, LY1, 8));
+const add3 = (a, b, k = 1) => a.map((v, i) => v + b[i]*k), lerp3 = (a, b, t) => a.map((v, i) => v + (b[i] - v)*t);
+const boxOf = pts => [[0, 1, 2].map(i => Math.min(...pts.map(p => p[i]))), [0, 1, 2].map(i => Math.max(...pts.map(p => p[i])))];
+// an oriented box: corner c and three edge vectors a, b, e; only the faces toward the viewer
+function obox(c, a, b, e, m, w = .7, shade = toneI){
+  const V = (i, j, k) => [0, 1, 2].map(n => c[n] + i*a[n] + j*b[n] + k*e[n]), ng = v => v.map(x => -x), na = norm(a), nb = norm(b), ne = norm(e);
+  return [[ng(na), [V(0,0,0), V(0,1,0), V(0,1,1), V(0,0,1)]], [na, [V(1,0,0), V(1,1,0), V(1,1,1), V(1,0,1)]],
+    [ng(nb), [V(0,0,0), V(1,0,0), V(1,0,1), V(0,0,1)]], [nb, [V(0,1,0), V(1,1,0), V(1,1,1), V(0,1,1)]],
+    [ng(ne), [V(0,0,0), V(1,0,0), V(1,1,0), V(0,1,0)]], [ne, [V(0,0,1), V(1,0,1), V(1,1,1), V(0,1,1)]]]
+    .filter(([n]) => vis(n)).map(([n, q]) => shape(q, shade(n, m), w)).join('');
+}
+const lbox = (F, s0, s1, y0, y1, t0, t1, m, w) => obox(LP(F, s0, y0, t0), F.sd.map(v => v*(s1 - s0)), [0, y1 - y0, 0], F.td.map(v => v*(t1 - t0)), m, w);
+const ribbon = (pts, hw, col) => { let s = '';
+  for (let i = 0; i < pts.length - 1; i++){ const a = pts[i], b = pts[i + 1];
+    s += fill(pd([[a[0], a[1] - hw, a[2]], [b[0], b[1] - hw, b[2]], [b[0], b[1] + hw, b[2]], [a[0], a[1] + hw, a[2]]]), col); }
+  return s + line(pts.map(p => [p[0], p[1] - hw, p[2]]), .45) + line(pts.map(p => [p[0], p[1] + hw, p[2]]), .45); };
+// a point of the touch screen, from its pixel (px to the right, py down)
+const ptB = (px, py) => [BSX0 + py*SCH/192, YM + SCW/2 - px*SCW/256, ZD + .05];
+
+/* ---------- what the screens show: drawn flat in pixels (256 x 192), then laid on the console ---------- */
+const pR = (x, y, w, h, c, extra = '') => `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(h)}" fill="${c}" ${extra}/>`;
+const pT = (x, y, s, fs, c, wt = 700, an = 'middle', fam = UIF, extra = '') => `<text x="${f(x)}" y="${f(y)}" font-size="${fs}" fill="${c}" font-weight="${wt}" text-anchor="${an}" font-family="${fam}" ${extra}>${esc(s)}</text>`;
+const pokeBall = (cx, cy, r) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#f7f7f7" stroke="#1b1b1b" style="stroke-width:${f(r*.12)}"/>`
+  + `<path d="M${cx - r} ${cy}A${r} ${r} 0 0 1 ${cx + r} ${cy}Z" fill="#e3350d" stroke="#1b1b1b" style="stroke-width:${f(r*.12)}"/>`
+  + pR(cx - r, cy - r*.08, 2*r, r*.16, '#1b1b1b') + `<circle cx="${cx}" cy="${cy}" r="${f(r*.3)}" fill="#f7f7f7" stroke="#1b1b1b" style="stroke-width:${f(r*.12)}"/>`;
+const diamond = (cx, cy, k) => { const p = pts => pts.map(([x, y]) => f(cx + x*k) + ' ' + f(cy + y*k)).join(' ');
+  return `<polygon points="${p([[-16, -6], [-8, -14], [8, -14], [16, -6], [0, 20]])}" fill="#9ad8ff" stroke="#e8f7ff" style="stroke-width:${f(.9*k)}"/>`
+    + `<polygon points="${p([[-8, -14], [8, -14], [5, -6], [-5, -6]])}" fill="#e8f7ff"/><polygon points="${p([[-16, -6], [-5, -6], [0, 20]])}" fill="#5fb3f0"/>`
+    + `<polygon points="${p([[16, -6], [5, -6], [0, 20]])}" fill="#bfe8ff"/><polygon points="${p([[-5, -6], [5, -6], [0, 20]])}" fill="#7cc6fa"/>`; };
+const stars = (seed, n, h) => { let s = '', a = seed; for (let i = 0; i < n; i++){ a = (a*9301 + 49297) % 233280; const x = a/233280*256; a = (a*9301 + 49297) % 233280;
+  s += `<circle cx="${f(x)}" cy="${f(a/233280*h)}" r="${i % 4 ? .7 : 1.2}" fill="#ffffff" opacity="${i % 3 ? .55 : .9}"/>`; } return s; };
+
+// health and safety warning
+function hsTop(){
+  return pR(0, 0, 256, 192, '#ffffff') + `<path d="M30 14L46 42L14 42Z" fill="#f2b31b" stroke="#c98b00" style="stroke-width:1.2" stroke-linejoin="round"/>` + pT(30, 39, '!', 20, '#3a2a00', 900)
+    + pT(56, 26, 'AVERTISSEMENT', 15, '#d8342b', 800, 'start') + pT(56, 42, 'SANTÉ ET SÉCURITÉ', 12, '#d8342b', 800, 'start') + pR(14, 54, 228, 1.5, '#d8342b')
+    + ['AVANT DE JOUER, LISEZ LE LIVRET', 'SANTÉ ET SÉCURITÉ : IL CONTIENT', 'DES INFORMATIONS IMPORTANTES', 'POUR VOTRE SANTÉ ET', 'VOTRE SÉCURITÉ.'].map((t, i) => pT(128, 80 + i*17, t, 11.5, '#2a2a2a', 700)).join('')
+    + pT(128, 180, 'www.nintendo.fr', 9, '#8a8a8a', 500);
+}
+const hsBot = () => pR(0, 0, 256, 192, '#ffffff') + `<g class="cf-blink">${pT(128, 92, "Touchez l'écran tactile", 15, '#2a2a2a', 700)}${pT(128, 114, 'pour continuer.', 15, '#2a2a2a', 700)}</g>`;
+// the DS menu: clock and calendar on top, the programs below
+function menuTop(){
+  let s = pR(0, 0, 256, 192, '#f2f4f6') + pR(0, 0, 256, 17, '#3d7be0') + pT(8, 12.5, 'Sacha', 10, '#ffffff', 700, 'start') + pT(214, 12.5, '28/10   10:24', 10, '#ffffff', 600, 'end')
+    + `<rect x="222" y="5" width="20" height="8" rx="1.5" fill="none" stroke="#ffffff" style="stroke-width:1.2"/>` + pR(242.5, 7.4, 1.6, 3.4, '#ffffff') + pR(224, 6.8, 13, 4.4, '#7fe08a');
+  // an analog clock at 10:24
+  s += `<circle cx="64" cy="104" r="46" fill="#ffffff" stroke="#b8c2cc" style="stroke-width:2"/>`;
+  for (let i = 0; i < 12; i++){ const a = i*Math.PI/6; s += `<line x1="${f(64 + 40*Math.sin(a))}" y1="${f(104 - 40*Math.cos(a))}" x2="${f(64 + 44*Math.sin(a))}" y2="${f(104 - 44*Math.cos(a))}" stroke="#55606b" style="stroke-width:${i % 3 ? 1.2 : 2.4}"/>`; }
+  const hand = (deg, len, w, c) => { const a = deg*Math.PI/180; return `<line x1="64" y1="104" x2="${f(64 + len*Math.sin(a))}" y2="${f(104 - len*Math.cos(a))}" stroke="${c}" style="stroke-width:${w}" stroke-linecap="round"/>`; };
+  s += hand(312, 24, 3.6, '#2c333a') + hand(144, 36, 2.4, '#2c333a') + `<circle cx="64" cy="104" r="3" fill="#3d7be0"/>`;
+  // October 2026: the 1st is a Thursday, today is Wednesday the 28th
+  s += `<rect x="124" y="28" width="124" height="152" rx="5" fill="#ffffff" stroke="#b8c2cc" style="stroke-width:1.5"/>` + pT(186, 44, 'Octobre 2026', 11, '#2c333a', 700);
+  'LMMJVSD'.split('').forEach((d, i) => s += pT(136 + i*16.6, 60, d, 9, i > 4 ? '#d8342b' : '#55606b', 700));
+  for (let d = 1; d <= 31; d++){ const k = d + 2, c = k % 7, r = Math.floor(k/7), x = 136 + c*16.6, y = 80 + r*19;
+    if (d === 28) s += `<rect x="${f(x - 8)}" y="${f(y - 12)}" width="16" height="16" rx="3" fill="#3d7be0"/>`;
+    s += pT(x, y, String(d), 9.5, d === 28 ? '#ffffff' : c > 4 ? '#d8342b' : '#2c333a', d === 28 ? 800 : 500); }
+  return s;
+}
+function menuBot(st, hi){
+  let s = pR(0, 0, 256, 192, '#e8ebee');
+  for (let i = 1; i < 16; i++) s += pR(i*16, 0, .6, 192, '#dde1e6') + (i < 12 ? pR(0, i*16, 256, .6, '#dde1e6') : '');
+  const has = st.cartP >= 1, panel = (x, y, w, h, fillc, stroke) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="${fillc}" stroke="${stroke}" style="stroke-width:2"/>`;
+  s += panel(14, 12, 228, 60, hi ? '#bcd7ff' : '#ffffff', has ? '#3d7be0' : '#b9c0c8');
+  s += has ? `<rect x="24" y="22" width="40" height="40" rx="4" fill="#0d1a46"/>` + pokeBall(44, 42, 14) + pT(74, 35, 'Pokémon', 15, '#1d2430', 800, 'start')
+      + pT(74, 52, 'Version Diamant', 11, '#3c4654', 600, 'start') + pT(74, 65, 'Nintendo', 8.5, '#7b8590', 500, 'start')
+    : pT(128, 46, 'Aucune carte DS insérée.', 12, '#7b8590', 600);
+  s += panel(14, 80, 110, 34, '#ffffff', '#b9c0c8') + `<rect x="24" y="88" width="20" height="18" rx="3" fill="#f2a33a"/>` + pT(52, 101, 'PictoChat', 10, '#1d2430', 700, 'start');
+  s += panel(132, 80, 110, 34, '#ffffff', '#b9c0c8') + `<rect x="140" y="88" width="20" height="18" rx="3" fill="#53b45a"/>` + pT(166, 97, 'Téléchargement', 8.5, '#1d2430', 700, 'start') + pT(166, 107, 'DS', 8.5, '#1d2430', 700, 'start');
+  s += panel(14, 122, 228, 34, '#f4f5f7', '#c9ced5') + pT(128, 143, 'Aucune cartouche Game Boy Advance', 10, '#9aa2ab', 600);
+  s += pR(0, 166, 256, 26, '#d5dbe2') + [[18, '#7b8590'], [46, '#7b8590'], [222, '#f2b31b']].map(([x, c]) => `<circle cx="${x}" cy="179" r="8" fill="${c}"/>`).join('')
+    + pT(18, 182.5, 'i', 10, '#ffffff', 800) + `<path d="M42 176.5L50 176.5M42 181.5L50 181.5" stroke="#ffffff" style="stroke-width:1.6"/>` + `<circle cx="222" cy="179" r="3.5" fill="#fff6c8"/>`;
+  return s;
+}
+// the game: title screen
+function titleTop(){
+  return `<defs><linearGradient id="ttg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#070f33"/><stop offset="1" stop-color="#28489a"/></linearGradient></defs>`
+    + pR(0, 0, 256, 192, 'url(#ttg)') + stars(7, 36, 192) + diamond(128, 146, 1.5)
+    + pT(128, 80, 'POKÉMON', 40, '#ffcb05', 900, 'middle', BIGF, 'stroke="#1f4aa8" style="stroke-width:5;paint-order:stroke" stroke-linejoin="round"')
+    + pT(128, 106, 'VERSION DIAMANT', 13, '#cfe9ff', 800, 'middle', UIF, 'letter-spacing="2"');
+}
+const titleBot = () => pR(0, 0, 256, 192, '#0d1a46') + stars(3, 16, 192) + pokeBall(128, 76, 30) + `<g class="cf-blink">${pT(128, 152, 'APPUYEZ SUR START', 15, '#ffffff', 800, 'middle', PXF)}</g>`;
+// the game: the first town, seen from above (16 x 12 tiles of 16 pixels)
+const MAP = ['TTTTTTTTTTTTTTTT', 'TggggggggggggggT', 'TgHHHgggggHHHggT', 'TgHHHgggggHHHggT', 'TggpggggggggpgfT', 'TggpppppppppsggT',
+  'TfgggggpggggggfT', 'TggggggpgggggggT', 'TgfggwwwwwwgggfT', 'TggggwwwwwwggggT', 'TggfgggggggggfgT', 'TTTTTTTpTTTTTTTT'];
+const walkable = (x, y) => y >= 0 && y < 12 && x >= 0 && x < 16 && 'gpf'.includes(MAP[y][x]);
+const HERO = { d: ['..RRRR..', '.RRRRRR.', '.HSSSSH.', '.SKSSKS.', '..SSSS..', '.BBWWBB.', '.SBBBBS.', '..DD.DD.'],
+  u: ['..RRRR..', '.RRRRRR.', '.HHHHHH.', '.HHHHHH.', '..HHHH..', '.BBBBBB.', '.SBBBBS.', '..DD.DD.'],
+  r: ['..RRRR..', '..RRRRRR', '..HSSSS.', '..HSSKS.', '...SSSS.', '..BBBB..', '..BBSB..', '..DD.DD.'] };
+function heroSvg(x, y, dir, step){
+  const rows = HERO[dir === 'l' ? 'r' : dir], col = { R: '#e3350d', H: '#2b2b38', S: '#f6c9a0', K: '#1b1b1b', B: '#2d5fb8', W: '#f2f2f2', D: '#3a3a46' };
+  let s = `<ellipse cx="${f(x + 8)}" cy="${f(y + 15.5)}" rx="5.5" ry="1.6" fill="#000" opacity=".25"/>`;
+  rows.forEach((r, j) => r.split('').forEach((c, i) => { if (c === '.') return; const ii = dir === 'l' ? 7 - i : i;
+    const lift = j === 7 && step && ((i < 4) === (step > 0)) ? -1 : 0; s += pR(x + ii*2, y + j*2 + lift, 2.05, 2.05, col[c]); }));
+  return s;
+}
+function townTop(st){
+  let s = pR(0, 0, 256, 192, '#7cc66b');
+  for (let y = 0; y < 12; y++) for (let x = 0; x < 16; x++){ const c = MAP[y][x], X = x*16, Y = y*16;
+    if (c === 'g' && (x + 2*y) % 3 === 0) s += pR(X + 4, Y + 6, 1.4, 3, '#5aa64e') + pR(X + 10, Y + 10, 1.4, 3, '#5aa64e');
+    if (c === 'p') s += pR(X, Y, 16, 16, '#e7d39b') + ((x + y) % 2 ? pR(X + 5, Y + 7, 2, 2, '#d3bd7f') : '');
+    if (c === 'f') s += [[4, 5, '#ff6f91'], [11, 9, '#ffffff'], [6, 12, '#ffd34d']].map(([a, b, k]) => `<circle cx="${X + a}" cy="${Y + b}" r="1.8" fill="${k}"/>`).join('');
+    if (c === 'w') s += pR(X, Y, 16, 16, '#4fa3e3') + ((x + y) % 2 ? pR(X + 3, Y + 6, 7, 1.4, '#b9e2ff') : pR(X + 6, Y + 11, 6, 1.4, '#b9e2ff'));
+    if (c === 'T') s += pR(X + 6, Y + 10, 4, 6, '#7a5034') + `<circle cx="${X + 8}" cy="${Y + 7}" r="7.5" fill="#2f7d3b"/><circle cx="${X + 6}" cy="${Y + 5}" r="3" fill="#4f9d58"/>`;
+    if (c === 's') s += pR(X + 7, Y + 8, 2, 8, '#7a5034') + pR(X + 2, Y + 3, 12, 7, '#a8743f') + pR(X + 4, Y + 5, 8, 1, '#5d3a1d'); }
+  for (const hx of [2, 10]){ const X = hx*16, Y = 32;
+    s += pR(X + 2, Y + 14, 44, 18, '#f3ead7') + `<path d="M${X} ${Y + 16}L${X + 6} ${Y}L${X + 42} ${Y}L${X + 48} ${Y + 16}Z" fill="#d9534f"/>`
+      + pR(X + 4, Y + 5, 40, 1.4, '#b53c38') + pR(X + 2, Y + 10, 44, 1.4, '#b53c38') + pR(X + 19, Y + 21, 10, 11, '#7a5034') + pR(X + 6, Y + 19, 9, 7, '#9fd3f5') + pR(X + 33, Y + 19, 9, 7, '#9fd3f5'); }
+  const k = ease(Math.min(1, st.mv)), hx = st.fx + (st.hx - st.fx)*k, hy = st.fy + (st.hy - st.fy)*k;
+  s += heroSvg(hx*16, hy*16 - 2, st.dir, st.mv < 1 ? (st.mv < .5 ? 1 : -1) : 0);
+  if (st.pt < 3.4){ const o = Math.min(1, st.pt/.3, (3.4 - st.pt)/.4);
+    s += `<g opacity="${f(o)}"><rect x="6" y="6" width="104" height="24" rx="3" fill="#fbf6e6" stroke="#6b5a3a" style="stroke-width:2"/>${pT(58, 22.5, 'BONAUGURE', 13, '#3b3020', 800, 'middle', PXF)}</g>`; }
+  return s;
+}
+const townBot = () => pR(0, 0, 256, 192, '#c23b3b') + pR(0, 0, 256, 6, '#a52f2f') + `<rect x="22" y="24" width="196" height="144" rx="10" fill="#a9c99a" stroke="#7d2222" style="stroke-width:4"/>`
+  + pT(120, 122, '10:24', 66, '#2c4a2c', 800, 'middle', PXF) + `<rect x="230" y="62" width="18" height="68" rx="4" fill="#e04b4b" stroke="#7d2222" style="stroke-width:2"/>`;
+// which picture is on which screen
+function screenPics(st){
+  const ph = st.phase, t = st.pt, fade = (a, b, o) => `${a}<g opacity="${f(Math.max(0, Math.min(1, o)))}">${b}</g>`;
+  if (ph === 'hs') return [hsTop(), hsBot()];
+  if (ph === 'menu') return [fade(hsTop(), menuTop(), t/.35), fade(hsBot(), menuBot(st, false), t/.35)];
+  if (ph === 'boot'){ const W = pR(0, 0, 256, 192, '#ffffff'), K = pR(0, 0, 256, 192, '#000000');
+    const logo = W + `<rect x="68" y="78" width="120" height="36" rx="18" fill="none" stroke="#9a9ea3" style="stroke-width:3"/>` + pT(128, 103, 'Nintendo', 19, '#9a9ea3', 800);
+    if (t < .45) return [menuTop(), menuBot(st, true)];
+    if (t < .9) return [fade(menuTop(), W, (t - .45)/.4), fade(menuBot(st, true), W, (t - .45)/.4)];
+    if (t < 2) return [fade(W, logo, (t - .9)/.3), W];
+    if (t < 2.4) return [fade(logo, K, (t - 2)/.35), fade(W, K, (t - 2)/.35)];
+    return [fade(K, titleTop(), (t - 2.4)/.4), fade(K, titleBot(), (t - 2.4)/.4)]; }
+  if (ph === 'title') return [titleTop(), titleBot()];
+  if (ph === 'start'){ const W = pR(0, 0, 256, 192, '#ffffff'); return [fade(titleTop(), W, t/.45), fade(titleBot(), W, t/.45)]; }
+  if (ph === 'play'){ const W = pR(0, 0, 256, 192, '#ffffff'); return [fade(townTop(st), W, 1 - t*3), fade(townBot(), W, 1 - t*3)]; }
+  return ['', ''];
+}
+function screenG(st, which, O, U, V, z = 0){
+  const k = st.scr, id = which + (z ? 'x' : '');
+  let s = pR(0, 0, 256, 192, OFF);
+  if (k > .01) s += `<g opacity="${f(k)}">${screenPics(st)[which === 'top' ? 0 : 1]}</g>`;
+  s += `<path d="M150 0L196 0L106 192L60 192Z" fill="#ffffff" opacity=".06"/>`;
+  return `<g transform="${txM(O, U.map(v => v*SCW/256), V.map(v => v*SCH/192))}"><clipPath id="c${id}"><rect width="256" height="192"/></clipPath><g clip-path="url(#c${id})">${s}</g></g>`;
+}
+const botScreen = (st, z = ZD + .04) => act('screen', screenG(st, 'bot', P(BSX0, YM + SCW/2, z), Dv(0, -1, 0), Dv(1, 0, 0), z < ZD));
+const topScreen = (st, F, t) => screenG(st, 'top', P(...LP(F, TS1, YM + SCW/2, t)), Dv(0, -1, 0), Dv(...F.sd.map(v => -v)), t > -LT/2);
+
+/* ---------- the bottom half ---------- */
+const lit = (st, id) => st.kd === id && st.kdT > 0;
+function dpadSvg(st){
+  const [cx, cy] = DP, w = 3.4, h = 10, z0 = ZD, z1 = ZK - .1, acc = PALS[st.pal].l, base = '#3a3d42';
+  const out = [[-w, -h], [w, -h], [w, -w], [h, -w], [h, w], [w, w], [w, h], [-w, h], [-w, w], [-h, w], [-h, -w], [-w, -w]].map(([a, b]) => [cx + a, cy + b]);
+  let s = '';
+  out.map((p, i) => { const q = out[(i + 1) % 12], n = norm([q[1] - p[1], -(q[0] - p[0]), 0]); return { p, q, n }; })
+    .filter(e => vis(e.n)).sort((a, b) => depthOf([...a.p, z0]) - depthOf([...b.p, z0]))
+    .forEach(e => s += shape([[...e.p, z0], [...e.q, z0], [...e.q, z1], [...e.p, z1]], toneI(e.n, matOf(base)), .5));
+  // the four arms (each one a button) and the centre: up is toward the hinge
+  const arms = { u: [[-w, -h], [w, -w]], d: [[-w, w], [w, h]], l: [[-w, w], [w, h]], r: [[-w, -h], [w, -w]] };
+  const quad = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(([a, b]) => [cx + a, cy + b, z1]);
+  const A = { u: quad(-h, -w, -w, w), d: quad(w, -w, h, w), l: quad(-w, w, w, h), r: quad(-w, -h, w, -w) };
+  const arrow = { u: [[-8.4, 0], [-5.6, -1.6], [-5.6, 1.6]], d: [[8.4, 0], [5.6, -1.6], [5.6, 1.6]], l: [[0, 8.4], [-1.6, 5.6], [1.6, 5.6]], r: [[0, -8.4], [-1.6, -5.6], [1.6, -5.6]] };
+  for (const k of ['u', 'd', 'l', 'r']) s += act('d' + k, fill(pd(A[k]), lit(st, 'd' + k) ? acc : '#45494f') + fill(pd(arrow[k].map(([a, b]) => [cx + a, cy + b, z1 + .01])), '#2a2c30'));
+  s += fill(pd(quad(-w, -w, w, w)), '#45494f') + `<circle cx="${f(P(cx, cy, z1)[0])}" cy="${f(P(cx, cy, z1)[1])}" r="${f(1.6*CAM_K)}" fill="#3a3d42"/>`;
+  return s + ink(pd(out.map(p => [...p, z1])), .8);
+}
+function smallButtons(st){
+  const acc = PALS[st.pal].l, U = Dv(0, -1, 0), V = Dv(1, 0, 0), items = [];
+  for (const [id, dx, dy] of ABXY){ const x = AB[0] + dx, y = AB[1] + dy, dn = lit(st, id), zt = dn ? ZD + .7 : ZK - .1;
+    items.push({ at: [x, y, ZD], svg: act(id, cyl(x, y, ZD, zt, 3.2, dn ? matOf(acc) : matOf('#e6e7e9'), toneI, .7, 18)
+      + `<text transform="${txM(P(x + 1.25, y, zt), U, V)}" font-size="3.6" fill="#8b8f95" text-anchor="middle" font-family="${UIF}" font-weight="800">${id}</text>`) }); }
+  for (const [id, x, y] of STS){ const dn = lit(st, id);
+    items.push({ at: [x, y, ZD], svg: act(id, cyl(x, y, ZD, dn ? ZD + .4 : ZD + .9, 1.7, dn ? matOf(acc) : matOf('#c9cbce'), toneI, .6, 14))
+      + `<text transform="${txM(P(x + .8, y - 3, ZD + .02), U, V)}" font-size="2.3" fill="#6b7077" font-family="${UIF}" font-weight="800">${id.toUpperCase()}</text>` }); }
+  items.push({ at: [DP[0], DP[1], ZD], svg: dpadSvg(st) });
+  return byDepth(items);
+}
+const ledCol = st => !st.pow ? '#3b3e42' : '#43c25c';
+function sideDetails(st){
+  let s = '';
+  const dark = '#16181b';
+  if (vis([-1, 0, 0])){                                             // back: SLOT-1, power socket, L and R
+    s += shape(on(PX(LX0 - .05), rrUV(SLOT[0], ZS0 - .5, SLOT[1], ZS0 + CE + .5, .8, 2)), dark, .55)
+      + shape(on(PX(LX0 - .05), rrUV(YM - 24, ZB0 + 2.4, YM - 16, ZB0 + 4.8, .6, 2)), dark, .45);
+    for (const [y0, y1] of [[LY1 - 22, LY1 - 4], [LY0 + 4, LY0 + 22]]) s += box(LX0 - 1.2, y0, ZD - 4.4, LX0, y1, ZD - .6, matOf('#cfd3d8'), toneI, .6);
+  }
+  if (vis([1, 0, 0])){                                              // front: SLOT-2 with its cover, jacks, volume
+    s += shape(on(PX(LX1 + .05), rrUV(YM - 29, ZB0 + 2, YM + 29, ZB0 + 6.6, 1, 2)), '#2b2e33', .5)
+      + fill(pd(on(PX(LX1 + .1), rrUV(YM - 27.5, ZB0 + 2.7, YM + 27.5, ZB0 + 5.9, .8, 2))), '#9aa0a7');
+    for (const y of [YM - 40, YM - 46]) s += shape(on(PX(LX1 + .05), ellUV(y, ZB0 + 7.6, 1.3, 1.3, 12)), dark, .4);
+    s += fill(pd(on(PX(LX1 + .05), rrUV(YM + 38, ZB0 + 7.1, YM + 50, ZB0 + 8.3, .5, 2))), dark) + shape(on(PX(LX1 + .12), rrUV(YM + 41, ZB0 + 6.8, YM + 44.5, ZB0 + 8.6, .6, 2)), '#c9cbce', .4);
+  }
+  if (vis([0, -1, 0])){                                             // right side: power switch, stylus silo
+    const kx = 149.5 + 5*Math.sin(Math.PI*Math.max(0, Math.min(1, st.swT >= 0 ? st.swT/.5 : 0)));
+    s += fill(pd(on(PY(LY0 - .05), rrUV(147.5, ZB0 + 4.6, 161, ZB0 + 6.8, .9, 2))), dark)
+      + act('power', shape(on(PY(LY0 - .12), rrUV(kx - 2.2, ZB0 + 4.2, kx + 2.2, ZB0 + 7.2, .8, 2)), '#c9cbce', .5));
+    s += shape(on(PY(LY0 - .05), ellUV(SX, SZ, 2.6, 2.6, 14)), dark, .45);
+  }
+  if (vis([0, 1, 0])) s += fill(pd(on(PY(LY1 + .05), rrUV(107, ZB0 + 4, 112, ZB0 + 6, .6, 2))), dark);   // left side: strap loop
+  return s;
+}
+function baseSvg(st, m, noScreen){
+  const top = tone([0, 0, 1], m);
+  let s = '';
+  for (const [x, y] of [[LX0 + 8, LY0 + 10], [LX0 + 8, LY1 - 10], [LX1 - 8, LY0 + 10], [LX1 - 8, LY1 - 10]]) s += cyl(x, y, BZ, ZB0 + .3, 2.5, DARK, toneI, .5, 10);
+  s += loft(BR0, BR1, n => tone(n, m)) + loft(BR1, BR2, n => tone(n, m)) + sideDetails(st) + fill(pd(BR2), top) + ink(pd(BR2), 1);
+  // hinge cradle under the barrel
+  s += box(HX - 3, LY0 + 3, ZD, HX + 3, LY1 - 3, ZK, m, tone, .6);
+  // the touch screen and its frame
+  s += shape(on(PZ(ZD + .02), rrUV(BSX0 - 2, YM - SCW/2 - 2, BSX0 + SCH + 2, YM + SCW/2 + 2, 1.5)), SCRF, .6);
+  if (!noScreen) s += botScreen(st);
+  s += ink(pd(on(PZ(ZD + .05), rectUV(BSX0, YM - SCW/2, BSX0 + SCH, YM + SCW/2))), .45);
+  // power and charge lights, microphone
+  const led = on(PZ(ZD + .03), ellUV(112.5, LY0 + 9, 1, 1, 10));
+  s += fill(pd(led), ledCol(st), st.pow && st.lid < .5 ? 'class="cf-blink"' : '') + ink(pd(led), .35)
+    + shape(on(PZ(ZD + .03), ellUV(112.5, LY0 + 13.5, 1, 1, 10)), '#3b3e42', .35)
+    + shape(on(PZ(ZD + .03), ellUV(112.5, YM, .9, .9, 10)), '#16181b', .35);
+  s += smallButtons(st);
+  return s + hullInk([...BR0, ...BR2], 2.4);
+}
+
+/* ---------- the top half ---------- */
+function lidSvg(st, m, F, noScreen){
+  const [Ai, Ao] = lidRings(F), nIn = F.td.map(v => -v), r = LT/2 + .1;
+  const barrel = rod([HX, LY0 + 1.5, HZ], [HX, LY1 - 1.5, HZ], r, m, tone, 1.4, r, 22);
+  let s = loft(Ai, Ao, n => tone(n, m));
+  if (vis(F.td)){ const t = LT/2 + .02;
+    s += fill(pd(Ao), tone(F.td, m)) + ink(pd(Ao), .9) + ink(pd(on(([u, v]) => LP(F, u, v, t), rrUV(5, LY0 + 5, LL - 5, LY1 - 5, 5))), .35)
+      + `<text transform="${txM(P(...LP(F, LL/2 + 2.2, YM, t)), Dv(0, -1, 0), Dv(...F.sd))}" font-size="6.2" fill="${mix(m.d, m.l, .45)}" text-anchor="middle" font-family="${UIF}" font-weight="800" font-style="italic">Nintendo DS</text>`; }
+  if (vis(nIn)){ const t = -LT/2 - .02;
+    s += fill(pd(Ai), tone(nIn, m)) + ink(pd(Ai), .9)
+      + shape(on(([u, v]) => LP(F, u, v, t), rrUV(TS0 - 2, YM - SCW/2 - 2, TS1 + 2, YM + SCW/2 + 2, 1.5)), SCRF, .6);
+    if (!noScreen) s += topScreen(st, F, t - .01);
+    s += ink(pd([[TS0, YM - SCW/2], [TS1, YM - SCW/2], [TS1, YM + SCW/2], [TS0, YM + SCW/2]].map(([u, v]) => LP(F, u, v, t - .02))), .45);
+    for (const yc of [YM - 48, YM + 48]) for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++)
+      s += fill(pd(on(([u, v]) => LP(F, u, v, t - .01), ellUV(35.8 + i*2.2, yc - 2.2 + j*2.2, .6, .6, 8))), '#1d2024'); }
+  s += hullInk([...Ai, ...Ao], 2.2);
+  return vis(F.sd.map(v => -v)) ? s + barrel : barrel + s;
+}
+function lidBox(F){ const [Ai, Ao] = lidRings(F), r = LT/2 + .1, b = boxOf([...Ai, ...Ao, [HX - r, LY0, HZ - r], [HX + r, LY1, HZ + r]]); b[0][2] = Math.max(b[0][2], ZK + .01); return b; }
+
+/* ---------- the game card: a box along its own axes a (contacts first), b (width), e (toward the label) ---------- */
+const cardM = matOf('#3c3f45');
+function cardPose(p){
+  const K = [[0, CON, 0], [.12, [158, 222, 62], 0], [.3, [130, 236, 62], 1], [.48, [22, 200, 50], 1], [.6, [22, CIN[1], 50], 1],
+    [.72, [22, CIN[1], CIN[2]], 1], [.86, [78, CIN[1], CIN[2]], 1], [1, CIN, 1]];
+  let i = 0; while (i < K.length - 2 && p > K[i + 1][0]) i++;
+  const [p0, c0, r0] = K[i], [p1, c1, r1] = K[i + 1], t = ease(Math.max(0, Math.min(1, (p - p0)/(p1 - p0))));
+  const ph = Math.PI*(r0 + (r1 - r0)*t), c = Math.cos(ph), s = Math.sin(ph);
+  return { c: lerp3(c0, c1, t), a: [1, 0, 0], b: [0, c, s], e: [0, -s, c], flat: Math.abs(s) < 1e-6, slot: p >= .72 };
+}
+function cardLabel(o){
+  const right = cross(o.e, o.a), org = add3(add3(add3(o.c, o.e, CE/2 + .03), o.a, 13), right, -14);
+  return `<g transform="${txM(P(...org), Dv(...right), Dv(...o.a.map(v => -v)))}">` + pR(0, 0, 28, 22, '#ffffff', 'rx=".8"')
+    + pT(14, 2.5, 'NINTENDO DS', 2, '#1b1b1b', 900, 'middle', UIF, 'font-style="italic"') + pR(1, 3.2, 26, 15.6, '#14266b')
+    + pT(14, 9.6, 'POKÉMON', 4.8, '#ffcb05', 900, 'middle', BIGF, 'stroke="#2a5bb8" style="stroke-width:.6;paint-order:stroke"')
+    + pT(14, 12.6, 'VERSION DIAMANT', 1.9, '#cfe9ff', 800) + diamond(14, 15.6, .14) + pT(14, 21, 'NTR-ADAF-FRA', 1.5, '#7b8590', 700) + '</g>';
+}
+// the card's svg; x1 cuts it at a plane x = x1 (the part already inside the console is hidden by its case)
+function cardSvg(o, cut){
+  const a = o.a.map(v => v*CA), b = o.b.map(v => v*CB), e = o.e.map(v => v*CE), c0 = add3(add3(add3(o.c, o.a, -CA/2), o.b, -CB/2), o.e, -CE/2);
+  if (cut != null){ const len = Math.max(0, cut - c0[0]); if (len <= 0) return ''; if (len < CA - .01) return obox(c0, [len, 0, 0], b, e, cardM, .7); }
+  let s = obox(c0, a, b, e, cardM, .7);
+  if (vis(o.e)) s += cardLabel(o) + [0, 1, 2].map(i => line([add3(add3(c0, o.a, 2 + i*1.4), e, 1.02), add3(add3(add3(c0, o.a, 2 + i*1.4), e, 1.02), b, 1)], .35)).join('');
+  if (vis(o.e.map(v => -v))) for (let i = 0; i < 17; i++){ const y0 = 4 + i*1.6, p = (u, v) => add3(add3(add3(c0, o.a, CA - .4 - u), o.b, y0 + v), o.e, -.03);
+    s += fill(pd([p(0, 0), p(0, 1), p(3.4, 1), p(3.4, 0)]), '#d6aa3c'); }
+  return act('cart', s);
+}
+
+/* ---------- the stylus: tip T, direction D from the tip to the end ---------- */
+const DH = norm([.5, -.6, .62]);
+const POSE = { silo: () => ({ T: [SX, LY0 + SLEN - .5, SZ], D: [0, -1, 0] }), out: () => ({ T: [SX, LY0 - 6, SZ], D: [0, -1, 0] }),
+  away: () => ({ T: [150, LY0 - 12, 36], D: DH }), hov: q => ({ T: [q[0], q[1], ZD + 12], D: DH }), touch: q => ({ T: [q[0], q[1], ZD + .3], D: DH }) };
+const styM = matOf('#d6dade');
+function stylusSvg(st, pose, t0, t1, m){
+  const seg = [[0, 5, .35, 1.9, styM], [5, SLEN - 4, 1.9, 1.9, styM], [SLEN - 4, SLEN, 2.15, 2.15, m]];
+  const pcs = [];
+  for (const [a, b, ra, rb, mm] of seg){ const u = Math.max(a, t0), v = Math.min(b, t1); if (v - u < .05) continue;
+    const r = q => ra + (rb - ra)*(q - a)/(b - a); pcs.push(rod(add3(pose.T, pose.D, u), add3(pose.T, pose.D, v), r(u), mm, toneI, .8, r(v), 12)); }
+  return act('stylus', vis(pose.D) ? pcs.join('') : pcs.reverse().join(''));
+}
+const inSilo = pose => Math.abs(pose.D[1] + 1) < 1e-6 && Math.abs(pose.T[0] - SX) < 1e-6;
+const styBox = (pose, t0, t1) => { const a = add3(pose.T, pose.D, t0), b = add3(pose.T, pose.D, t1), B = boxOf([a, b]);
+  return [B[0].map(v => v - 2.2), B[1].map(v => v + 2.2)]; };
+
+/* ---------- the game case on the desk ---------- */
+function caseSvg(){
+  const [x0, x1, y0, y1, h] = CASE, z1 = BZ + h, cm = matOf('#e8ecf0');
+  let s = box(x0, y0, BZ, x1, y1, z1, cm, toneI, .9);
+  if (vis([0, 1, 0])) s += fill(pd(on(PY(y1 + .05), rrUV(x0 + 3, BZ + 2.5, x1 - 3, z1 - 2.5, 1.5, 2))), '#14266b')
+    + `<text transform="${txM(P(x0 + 70, y1 + .1, BZ + 5.6), Dv(1, 0, 0), Dv(0, 0, -1))}" font-size="4.6" fill="#ffcb05" text-anchor="middle" font-family="${UIF}" font-weight="900">POKÉMON VERSION DIAMANT</text>`;
+  if (vis([0, 0, 1])){ const W = y1 - y0 - 4, H = x1 - x0 - 4;
+    s += `<g transform="${txM(P(x0 + 2, y1 - 2, z1 + .02), Dv(0, -1, 0), Dv(1, 0, 0))}">`
+      + `<defs><linearGradient id="cvg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#081236"/><stop offset="1" stop-color="#2a4ea6"/></linearGradient></defs>`
+      + pR(0, 0, W, H, 'url(#cvg)') + pR(0, 0, W, 13, '#ffffff') + pT(W/2, 9.4, 'NINTENDO DS', 8, '#1b1b1b', 900, 'middle', UIF, 'font-style="italic"')
+      + `<g transform="translate(0 13) scale(${f(W/256)})">${stars(11, 26, 300)}</g>` + diamond(W/2, 84, 1.25)
+      + pT(W/2, 43, 'POKÉMON', 21, '#ffcb05', 900, 'middle', BIGF, 'stroke="#1f4aa8" style="stroke-width:2.6;paint-order:stroke" stroke-linejoin="round"')
+      + pT(W/2, 55, 'VERSION DIAMANT', 7, '#cfe9ff', 800, 'middle', UIF, 'letter-spacing="1"')
+      + pR(5, H - 24, 15, 19, '#ffffff') + pR(6, H - 23, 13, 13, '#5fae3c') + pT(12.5, H - 12.6, '3', 11, '#ffffff', 900) + pT(12.5, H - 6.6, 'PEGI', 4, '#1b1b1b', 900)
+      + pT(W - 5, H - 6, 'Nintendo', 5, '#ffffff', 800, 'end') + '</g>' + ink(pd(on(PZ(z1 + .03), rectUV(x0 + 2, y0 + 2, x1 - 2, y1 - 2))), .5); }
+  return s;
+}
+
+/* ---------- see-through: the inside ---------- */
+function insideBase(st, k){
+  const z = ZB0, out = [], pcb = matOf('#2f6b4f'), acc = PALS[st.pal].l, on2 = st.pow && st.scr > .5;
+  const add = (b, svg) => out.push({ box: [[b[0], b[1], b[2]], [b[3], b[4], b[5]]], svg });
+  // main board, with traces (lit while the console works)
+  const zt = z + 1.22, tr = (pts, c) => `<path d="${'M' + pts.map(([x, y]) => { const q = P(x, y, zt); return f(q[0]) + ' ' + f(q[1]); }).join('L')}" fill="none" stroke="${c}" stroke-width=".55" stroke-linecap="round" stroke-linejoin="round"/>`;
+  let deco = '';
+  for (let i = 0; i < 5; i++) deco += tr([[LX1 - 6, 100 + i*4], [150, 100 + i*4], [140, 92 + i*4], [118, 92 + i*4]], on2 ? acc : '#5f9c7b');
+  for (let i = 0; i < 4; i++) deco += tr([[163, 136 + i*4], [118, 136 + i*4]], '#5f9c7b');
+  for (const [x, y] of [[106, 36], [168, 36], [106, 154], [168, 154]]) deco += shape(on(PZ(zt), ellUV(x, y, 1.6, 1.6, 10)), METAL.m, .35);
+  add([LX0 + 2, LY0 + 3, z + .4, LX1 - 2, LY1 - 3, z + 1.2], box(LX0 + 2, LY0 + 3, z + .4, LX1 - 2, LY1 - 3, z + 1.2, pcb, toneI, .8) + deco);
+  // battery
+  add([122, 40, z + 1.2, 158, 90, z + 5.2], box(122, 40, z + 1.2, 158, 90, z + 5.2, matOf('#5b616b'), toneI, .7)
+    + `<text transform="${txM(P(141.5, 65, z + 5.22), Dv(0, -1, 0), Dv(1, 0, 0))}" font-size="3.4" fill="#d9dde2" text-anchor="middle" font-family="${UIF}" font-weight="700">3,7 V  1000 mAh</text>`);
+  // SLOT-1: two rails and the contact block the card meets
+  for (const [y0, y1] of [[SLOT[0] - 1.6, SLOT[0]], [SLOT[1], SLOT[1] + 1.6]]) add([LX0 - 1.4, y0, z + 1.2, 132, y1, ZS0 + CE + .2], box(LX0 + .2, y0, z + 1.2, 132, y1, ZS0 + CE + .2, METAL, toneI, .5));
+  add([132, SLOT[0], z + 1.2, 135, SLOT[1], ZS0 + CE + .2], box(132, SLOT[0], z + 1.2, 135, SLOT[1], ZS0 + CE + .2, matOf('#2b2e33'), toneI, .6));
+  // SLOT-2 (Game Boy Advance) connector at the front
+  add([161, YM - 30, z + 1.2, LX1 - 1.5, YM + 30, z + 6.2], box(161, YM - 30, z + 1.2, LX1 - 1.5, YM + 30, z + 6.2, matOf('#3a3e44'), toneI, .7));
+  // button contact pads, power switch, L / R switches, microphone
+  for (const [cx, cy, r] of [[DP[0], DP[1], 10], [AB[0], AB[1], 10.6]]) add([cx - r, cy - r, ZD - 2.6, cx + r, cy + r, ZD - 1.4], box(cx - r, cy - r, ZD - 2.6, cx + r, cy + r, ZD - 1.4, matOf('#4a4f57'), toneI, .6));
+  add([146, STS[0][2] - 3, ZD - 2.6, 162, STS[0][2] + 3, ZD - 1.4], box(146, STS[0][2] - 3, ZD - 2.6, 162, STS[0][2] + 3, ZD - 1.4, matOf('#4a4f57'), toneI, .5));
+  add([148, LY0 + .8, z + 4, 160, LY0 + 4, z + 7], box(148, LY0 + .8, z + 4, 160, LY0 + 4, z + 7, METAL, toneI, .5));
+  for (const [y0, y1] of [[LY1 - 20, LY1 - 6], [LY0 + 6, LY0 + 20]]) add([LX0 + .4, y0, z + 6.2, LX0 + 1.9, y1, ZD - .8], box(LX0 + .4, y0, z + 6.2, LX0 + 1.9, y1, ZD - .8, METAL, toneI, .45));
+  add([110.5, YM - 2.5, z + 1.2, 114.5, YM + 2.5, z + 4], box(110.5, YM - 2.5, z + 1.2, 114.5, YM + 2.5, z + 4, matOf('#3a3e44'), toneI, .5));
+  // the ribbon cable up into the hinge
+  add([102, 143, z + 1.2, 110, 151, ZK], ribbon([[109, 147, z + 1.22], [104, 147, z + 5.5], [HX, 147, ZK]], 3.6, '#d08c2c'));
+  // the touch screen module: pale, so what lies under it shows
+  add([BSX0 - 3, YM - SCW/2 - 3, z + 6.2, BSX0 + SCH + 3, YM + SCW/2 + 3, ZD - .15], `<g opacity=".5">${box(BSX0 - 3, YM - SCW/2 - 3, z + 6.2, BSX0 + SCH + 3, YM + SCW/2 + 3, ZD - .15, matOf('#a9b0b6'), toneI, .6)}</g>`
+    + `<g opacity=".85">${botScreen(st, ZD - .12)}</g>`);
+  // the card, whole, while any of it is in the slot; the stylus while any of it is in its silo
+  const o = cardPose(st.cartP);
+  if (o.slot && o.c[0] + CA/2 > LX0) add([o.c[0] - CA/2, o.c[1] - CB/2, o.c[2] - CE/2, o.c[0] + CA/2, o.c[1] + CB/2, o.c[2] + CE/2], cardSvg(o));
+  const sp0 = st.sty.pose;
+  if (inSilo(sp0) && sp0.T[1] > LY0){ const t1 = Math.min(SLEN, sp0.T[1] - LY0), b = styBox(sp0, 0, t1); add([...b[0], ...b[1]], stylusSvg(st, sp0, 0, t1, PALS[st.pal])); }
+  return out;
+}
+// while the game loads: its data from the card's contacts, along the board, to the ribbon and the screens
+function dataFlow(st){
+  if (!(st.phase === 'boot' && st.pt > .3 && st.pt < 2.8)) return '';
+  const zb = ZB0 + 1.3, pts = [[CIN[0] + CA/2 - 1, CIN[1], ZS0 + CE], [133.5, CIN[1], zb + 2], [140, CIN[1], zb], [140, 128, zb], [118, 140, zb], [110, 147, zb], [104, 147, ZB0 + 5.5], [HX, 147, ZK]];
+  const d = 'M' + pts.map(p => { const q = P(...p); return f(q[0]) + ' ' + f(q[1]); }).join('L');
+  return `<path d="${d}" fill="none" stroke="${INK}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" opacity=".5"/>`
+    + `<path class="cf-flow" d="${d}" fill="none" stroke="${PALS[st.pal].l}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="stroke-dasharray:${f(5*INK_K)} ${f(4*INK_K)};--d:${f(9*INK_K)}px"/>`;
+}
+function lidParts(st, F){
+  const parts = [], mm = matOf('#3a3e44');
+  for (const yc of [YM - 48, YM + 48]) parts.push({ at: LP(F, 37, yc, -2.6), svg: lbox(F, 32, 42, yc - 5, yc + 5, -LT/2 + .6, -LT/2 + 3.4, mm, .55)
+    + shape(on(([u, v]) => LP(F, u, v, -LT/2 + .58), ellUV(37, yc, 3.6, 3.6, 14)), '#24272b', .4) });
+  const fl = st.phase === 'boot' && st.pt > .3 && st.pt < 2.8;
+  parts.push({ at: LP(F, 6, 147, -1), svg: ribbon([[HX, 147, HZ], LP(F, 5, 147, -1.4), LP(F, TS0 - 3, 132, -2.4)], 3.6, fl ? PALS[st.pal].l : '#d08c2c') });
+  return byDepth(parts);
+}
+function topPanel(st, F, inV, k){
+  const m = matOf('#a9b0b6'), box3 = lbox(F, TS0 - 3, TS1 + 3, YM - SCW/2 - 3, YM + SCW/2 + 3, -LT/2 + .5, -LT/2 + 3.6, m, .6);
+  if (!inV) return `<g opacity="${f(.45*k)}">${box3}</g>`;
+  return `<g opacity="${f(.5*k)}">${box3}</g>` + topScreen(st, F, -LT/2 + .48);
+}
+function baseXR(st, m, k){
+  return `<g opacity="${f(.5*k)}">${fill(pd(BR0), mix(m.d, '#f2efe7', .5))}</g>`
+    + `<g opacity="${f(k)}">${byDepthG(insideBase(st, k))}${dataFlow(st)}</g>`
+    + `<g opacity="${f(1 - .8*k)}">${baseSvg(st, m, true)}</g><g opacity="${f(.6*k)}">${hullInk([...BR0, ...BR2], 2.4)}</g>`;
+}
+function lidXR(st, m, k, F){
+  const inV = vis(F.td.map(v => -v)), [Ai, Ao] = lidRings(F);
+  const far = `<g opacity="${f(.5*k)}">${fill(pd(inV ? Ao : Ai), mix(m.d, '#f2efe7', .5))}</g>`;
+  const inner = `<g opacity="${f(k)}">${lidParts(st, F)}</g>`, panel = topPanel(st, F, inV, k);
+  return far + (inV ? inner + panel : panel + inner) + `<g opacity="${f(1 - .8*k)}">${lidSvg(st, m, F, true)}</g><g opacity="${f(.6*k)}">${hullInk([...Ai, ...Ao], 2.2)}</g>`;
+}
+
+/* ---------- desk, shadows (redrawn only when the view or the lid changes) ---------- */
+function groundSvg(st){
+  let s = board(0, 0, DX, DY, BZ, 12, WOOD);
+  for (let i = 0; i < 6; i++){ const x = 18 + i*34; s += `<path d="${pd([[x, 8, BZ + .02], [x + 5, DY*.35, BZ + .02], [x - 4, DY*.7, BZ + .02], [x + 3, DY - 8, BZ + .02]], false)}" fill="none" stroke="${mix(WOOD.l, WOOD.d, .3)}" stroke-width=".7"/>`; }
+  const F = lidF(lidTh(st)), [Ai, Ao] = lidRings(F), [x0, x1, y0, y1, h] = CASE;
+  const cube = (a, b, c, d, e, g) => [[a, b, c], [d, b, c], [d, e, c], [a, e, c], [a, b, g], [d, b, g], [d, e, g], [a, e, g]];
+  return s + castShadow([...BR0, ...BR2], BZ, deckTop) + castShadow([...Ai, ...Ao, ...BR2.filter(p => p[0] < HX + 6)], BZ, deckTop)
+    + castShadow(cube(x0, y0, BZ, x1, y1, BZ + h), BZ, deckTop);
+}
+
+/* ---------- labels ---------- */
+function lcCallouts(items){
+  if (!items.length || !labelsShown()) return '';
+  const svgEl = document.getElementById('fig'), vb = svgEl.viewBox.baseVal, ctm = svgEl.getScreenCTM();
+  const k = INK_K*Math.min(1, Math.pow(760/(svgEl.clientWidth || 760), .75)), u = window.LBL_U ? LBL_U() : 0, fs = u ? 10*u : 8.6*k, hgt = u ? 17*u : fs*1.8, gap = hgt + (u ? 3*u : 3*k);
+  const below = id => { const el = document.getElementById(id); if (!el || !ctm || u) return -1e9;
+    const r = el.getBoundingClientRect(); return new DOMPoint(r.left, r.bottom + 10).matrixTransform(ctm.inverse()).y + hgt/2; };
+  const pts = items.map(it => { const [X, Y] = P(...it.at); return { ...it, X, Y }; }).sort((a, b) => a.X - b.X), half = Math.ceil(pts.length/2);
+  let s = '';
+  for (const [col, side, top] of [[pts.slice(0, half), -1, below('btns')], [pts.slice(half), 1, Math.max(below('stats'), below('xrb'))]]){
+    const t0 = Math.max(vb.y + hgt, top);
+    col.sort((a, b) => a.Y - b.Y);
+    let y = -1e9; for (const c of col){ c.py = Math.max(c.Y, y + gap, t0); y = c.py; }
+    const over = col.length ? col[col.length - 1].py - (vb.y + vb.height - hgt) : 0;
+    if (over > 0){ const room = col[0].py - t0; for (const c of col) c.py -= Math.min(over, room); }
+    for (const c of col){
+      c.n = ((window.__ln || (window.__ln = {}))[c.text] || (__ln[c.text] = Object.keys(__ln).length + 1));
+      const w = u ? hgt*(c.n > 9 ? 1.3 : 1) : c.text.length*fs*.62 + fs*1.5;
+      const px = side < 0 ? vb.x + 3*k + w/2 : vb.x + vb.width - 3*k - w/2, ex = px - side*w/2;
+      s += `<g class="tag${c.on ? ' on' : ''}" data-n="${c.n}" data-t="${c.text}"><path d="M${f(c.X)} ${f(c.Y)}L${f(ex - side*4*k)} ${f(c.py)}L${f(ex)} ${f(c.py)}" fill="none" stroke="${INK}" stroke-width="1"/>`
+        + `<circle cx="${f(c.X)}" cy="${f(c.Y)}" r="${f(1.4*k)}" fill="${INK}"/>`
+        + `<rect x="${f(px - w/2)}" y="${f(c.py - hgt/2)}" width="${f(w)}" height="${f(hgt)}" rx="${f(hgt/2)}" fill="${c.on ? 'var(--accent,#f4b829)' : '#fff4d6'}" stroke="${INK}" stroke-width="1.2"/>`
+        + `<text x="${f(px)}" y="${f(c.py + fs*.36)}" font-size="${f(fs)}" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-weight="800" letter-spacing=".04em" fill="${INK}">${u ? c.n : c.text}</text></g>`; } }
+  return s;
+}
+const playing = st => st.phase === 'play' && st.scr > .9, loading = st => st.phase === 'boot' && st.pt < 2.8;
+function surfaceLabels(st, F){
+  const open = st.lid > .5, inV = vis(F.td.map(v => -v)), o = cardPose(st.cartP), sp0 = st.sty.pose;
+  return [
+    ...(open && inV ? [{ at: LP(F, (TS0 + TS1)/2, YM - 20, -LT/2), text: 'ÉCRAN DU HAUT', on: st.scr > .5 }, { at: LP(F, 37, YM + 48, -LT/2), text: 'HAUT-PARLEURS', on: false }] : []),
+    ...(open ? [{ at: ptB(200, 150), text: 'ÉCRAN TACTILE', on: st.sty.prog.length > 0 }, { at: [DP[0], DP[1] + 6, ZK], text: 'CROIX DIRECTIONNELLE', on: playing(st) && st.kdT > 0 },
+      { at: [AB[0], AB[1] - 7.2, ZK], text: 'BOUTONS A B X Y', on: false }, { at: [STS[0][1], STS[0][2], ZD + .9], text: 'START ET SELECT', on: lit(st, 'start') },
+      { at: [112.5, LY0 + 11, ZD], text: 'VOYANTS', on: st.pow }, { at: [112.5, YM, ZD], text: 'MICRO', on: false }] : []),
+    ...(vis([-1, 0, 0]) ? [{ at: [LX0, (SLOT[0] + SLOT[1])/2, ZS0 + CE/2], text: 'FENTE DE LA CARTE', on: st.cartP > .8 && st.cartP < 1 }] : []),
+    ...(vis([1, 0, 0]) ? [{ at: [LX1, YM, ZB0 + 4.3], text: 'PORT GAME BOY ADVANCE', on: false }] : []),
+    ...(vis([0, -1, 0]) ? [{ at: [154, LY0, ZB0 + 5.7], text: 'INTERRUPTEUR', on: st.swT >= 0 }] : []),
+    ...(!(o.slot && o.c[0] + CA/2 > LX0 + 2) ? [{ at: o.c, text: 'CARTOUCHE', on: st.cartP > 0 && st.cartP < 1 }] : []),
+    ...(!inSilo(sp0) || sp0.T[1] < LY0 + 60 ? [{ at: add3(sp0.T, sp0.D, 40), text: 'STYLET', on: st.sty.prog.length > 0 }] : []),
+    { at: [(CASE[0] + CASE[1])/2 - 30, CASE[3] - 20, BZ + CASE[4]], text: 'BOÎTE DU JEU', on: false } ];
+}
+function insideLabels(st, F){
+  const open = st.lid > .3, inV = vis(F.td.map(v => -v)), o = cardPose(st.cartP), sp0 = st.sty.pose;
+  return [
+    { at: [140, 50, ZB0 + 5.2], text: 'BATTERIE', on: st.pow },
+    { at: [165, 150, ZB0 + 1.2], text: 'CARTE MÈRE', on: st.pow && st.scr > .5 },
+    { at: [133.5, SLOT[0], ZS0 + CE], text: 'LECTEUR DE CARTE', on: loading(st) },
+    ...(o.slot && o.c[0] + CA/2 > LX0 + 2 ? [{ at: [o.c[0] - 4, o.c[1] + 8, o.c[2] + CE/2], text: 'CARTOUCHE', on: loading(st) || (st.cartP > 0 && st.cartP < 1) }] : []),
+    ...(inSilo(sp0) && sp0.T[1] > LY0 + 20 ? [{ at: [SX, LY0 + 40, SZ + 2], text: 'STYLET', on: false }] : []),
+    { at: [166, YM + 22, ZB0 + 6.2], text: 'PORT GAME BOY ADVANCE', on: false },
+    { at: [BSX0 + 30, YM + 20, ZD - .15], text: 'ÉCRAN TACTILE', on: st.scr > .5 },
+    { at: [DP[0] - 6, DP[1] + 6, ZD - 1.4], text: 'CONTACTS DES BOUTONS', on: playing(st) && st.kdT > 0 },
+    { at: [104, 147, ZB0 + 5.5], text: 'NAPPE', on: loading(st) },
+    { at: [154, LY0 + 2.4, ZB0 + 7], text: 'INTERRUPTEUR', on: st.swT >= 0 },
+    ...(open && inV ? [{ at: LP(F, (TS0 + TS1)/2, YM - 18, -LT/2 + .5), text: 'ÉCRAN DU HAUT', on: st.scr > .5 }, { at: LP(F, 37, YM + 48, -LT/2 + .6), text: 'HAUT-PARLEURS', on: playing(st) }] : []),
+    { at: [HX, LY0 + 20, HZ + LT/2], text: 'CHARNIÈRE', on: st.lid > 0 && st.lid < 1 } ];
+}
+
+/* ---------- the scene ---------- */
+function deskParts(st){
+  const out = [], [x0, x1, y0, y1, h] = CASE, o = cardPose(st.cartP), sp0 = st.sty.pose;
+  out.push({ box: [[x0, y0, BZ], [x1, y1, BZ + h]], svg: caseSvg() });
+  // the card: whole while it is out, then only the part still outside the console
+  const ext = [o.c, ...[-1, 1].flatMap(i => [-1, 1].flatMap(j => [-1, 1].map(k => add3(add3(add3(o.c, o.a, i*CA/2), o.b, j*CB/2), o.e, k*CE/2))))], cb = boxOf(ext);
+  if (o.slot && cb[1][0] > LX0){ if (cb[0][0] < LX0) out.push({ box: [cb[0], [LX0, cb[1][1], cb[1][2]]], svg: cardSvg(o, LX0) }); }
+  else out.push({ box: cb, svg: cardSvg(o) });
+  // the stylus: in its silo only its end shows
+  const t0 = inSilo(sp0) ? Math.max(0, sp0.T[1] - LY0) : 0;
+  if (t0 < SLEN){ const b = styBox(sp0, t0, SLEN); if (inSilo(sp0)) b[1][1] = Math.min(b[1][1], LY0); out.push({ box: b, svg: stylusSvg(st, sp0, t0, SLEN, PALS[st.pal]) }); }
+  return out;
+}
+function scene(st, m){
+  const k = ease(st.xr || 0), F = lidF(lidTh(st));
+  const items = [
+    { box: [[LX0, LY0, BZ], [LX1, LY1, ZK]], svg: k > 0 ? baseXR(st, m, k) : baseSvg(st, m) },
+    { box: lidBox(F), svg: k > 0 ? lidXR(st, m, k, F) : lidSvg(st, m, F) },
+    ...deskParts(st) ];
+  let s = byDepthG(items);
+  if (labelsShown()) s += lcCallouts(k > .6 ? insideLabels(st, F) : surfaceLabels(st, F));
+  return s;
+}
+
+/* ---------- what happens ---------- */
+let ui, looping = false, SIM = false;
+const styBusy = st => st.sty.prog.length > 0;
+function stylusProg(st){
+  const qh = ptB(128, 112), qg = ptB(128, 42), s = [['out', null, .45], ['away', null, .45]];
+  if (st.phase === 'hs') s.push(['hov', qh, .45], ['touch', qh, .14, 'menu'], ['hov', qh, .2]);
+  s.push(['hov', qg, .5], ['touch', qg, .14, 'boot'], ['hov', qg, .2], ['away', null, .5], ['out', null, .45], ['silo', null, .45]);
+  return s;
+}
+function lightKey(st, id){ st.kd = id; st.kdT = .22; }
+function startSwitch(st){ st.swT = 0; }
+function doStart(st){ lightKey(st, 'start'); st.phase = 'start'; st.pt = 0; }
+function tick(st, dt){
+  let busy = false;
+  if (st.lid !== st.lidT){ st.lid = Math.min(1, Math.max(0, st.lid + Math.sign(st.lidT - st.lid)*dt/1.1)); busy = true; }
+  if (st.cartP !== st.cartT){ st.cartP = Math.min(1, Math.max(0, st.cartP + Math.sign(st.cartT - st.cartP)*dt/3.2)); busy = true; }
+  if (st.swT >= 0){ const was = st.swT; st.swT += dt; busy = true;
+    if (was < .25 && st.swT >= .25){ st.pow = !st.pow; st.phase = st.pow ? 'hs' : 'off'; st.pt = 0; if (!st.pow) st.goal = 0; }
+    if (st.swT >= .5) st.swT = -1; }
+  const scrT = st.pow && st.lid > .9 ? 1 : 0;
+  if (st.scr !== scrT){ st.scr = Math.min(1, Math.max(0, st.scr + Math.sign(scrT - st.scr)*dt/.35)); busy = true; }
+  if (st.scr >= .99){ st.pt += dt; if (st.phase === 'boot' || st.phase === 'start' || st.phase === 'menu' && st.pt < .4 || st.phase === 'play' && st.pt < 3.5) busy = true; }
+  if (st.phase === 'boot' && st.pt >= 2.8){ st.phase = 'title'; st.pt = 0; }
+  if (st.phase === 'start' && st.pt >= .5){ st.phase = 'play'; st.pt = 0; }
+  // the stylus program
+  const sy = st.sty;
+  if (sy.prog.length){ busy = true; const [name, q, dur, ev] = sy.prog[sy.i]; sy.t += dt;
+    const to = POSE[name](q), k = ease(Math.min(1, sy.t/dur));
+    sy.pose = { T: lerp3(sy.from.T, to.T, k), D: norm(lerp3(sy.from.D, to.D, k)) };
+    if (sy.t >= dur){ sy.pose = to; sy.from = to; sy.t = 0; sy.i++;
+      if (ev === 'menu' && st.phase === 'hs'){ st.phase = 'menu'; st.pt = 0; }
+      if (ev === 'boot' && st.phase === 'menu' && st.cartP >= 1){ st.phase = 'boot'; st.pt = 0; }
+      if (sy.i >= sy.prog.length){ sy.prog = []; sy.i = 0; } } }
+  // walking
+  if (st.mv < 1){ st.mv = Math.min(1, st.mv + dt/.24); busy = true; }
+  if (st.kdT > 0){ st.kdT -= dt; busy = true; }
+  // the steps still to do for the button pressed last
+  const g = st.goal;
+  if (g >= 2){ busy = true;
+    if (g >= 4 && st.cartT === 0 && !st.pow) st.cartT = 1;
+    if (!st.lidT) st.lidT = 1;
+    if (!st.pow && st.swT < 0 && st.lid >= 1 && (g < 4 || st.cartP >= 1)) startSwitch(st);
+    if (g >= 4 && (st.phase === 'hs' || st.phase === 'menu') && st.scr >= .99 && !styBusy(st) && st.pt > .5 && st.cartP >= 1){ sy.prog = stylusProg(st); sy.i = 0; sy.t = 0; sy.from = sy.pose; }
+    if (g >= 5 && st.phase === 'title' && st.pt > .7 && st.scr >= .99) doStart(st);
+    if (g === 2 && st.pow || g === 4 && ['title', 'start', 'play'].includes(st.phase) || g === 5 && st.phase === 'play') st.goal = 0; }
+  return busy;
+}
+function run(){ if (looping || SIM) return; looping = true; ui.animate(dt => { const b = tick(ui.st, Math.min(dt, .05)); if (!b) looping = false; return b; }); }
+function toggleLid(st){
+  if (styBusy(st)) return ui.flash('Attendez que le stylet soit rangé');
+  if (st.lidT){ st.lidT = 0; st.goal = 0; } else st.lidT = 1; run(); }
+function toggleCart(st){
+  if (st.pow) return ui.flash("Éteignez d'abord la console : on n'insère ni ne retire une carte console allumée");
+  if (st.cartP > 0 && st.cartP < 1) return ui.flash('La cartouche est en chemin');
+  st.cartT = st.cartT ? 0 : 1; run(); }
+function togglePower(st){
+  if (styBusy(st)) return ui.flash('Attendez que le stylet soit rangé');
+  if (st.swT >= 0) return;
+  if (st.pow){ st.goal = 0; startSwitch(st); } else st.goal = Math.max(st.goal, 2); run(); }
+function launch(st){
+  if (['boot', 'title', 'start', 'play'].includes(st.phase)) return ui.flash('Le jeu est déjà lancé');
+  if (styBusy(st)) return;
+  if (st.cartT === 0 && st.pow) return ui.flash("Il n'y a pas de carte : éteignez la console, puis insérez la cartouche");
+  st.goal = Math.max(st.goal, 4); run(); }
+function startBtn(st){
+  if (st.phase === 'title' && st.scr >= .99){ doStart(st); return run(); }
+  if (st.phase === 'start' || st.phase === 'play'){ lightKey(st, 'start'); run(); return ui.flash('La partie a commencé : cliquez sur la croix directionnelle pour faire marcher le personnage'); }
+  if (st.cartT === 0 && st.pow) return ui.flash("Il n'y a pas de carte : éteignez la console, puis insérez la cartouche");
+  st.goal = 5; run(); }
+function move(st, dir){
+  lightKey(st, 'd' + dir);
+  if (playing(st) && st.mv >= 1){ st.dir = dir;
+    const [dx, dy] = { u: [0, -1], d: [0, 1], l: [-1, 0], r: [1, 0] }[dir], nx = st.hx + dx, ny = st.hy + dy;
+    if (walkable(nx, ny)){ st.fx = st.hx; st.fy = st.hy; st.hx = nx; st.hy = ny; st.mv = 0; } }
+  run(); }
+
+ui = mountFigure({
+  fig: '05', turn: 'full', title: 'Nintendo DS',
+  size: [DX, DY, 86], palette: 'cobalt',
+  state: { lid: 0, lidT: 0, cartP: 0, cartT: 0, pow: false, swT: -1, scr: 0, phase: 'off', pt: 0, goal: 0,
+    sty: { pose: POSE.silo(), from: POSE.silo(), prog: [], i: 0, t: 0 }, kd: '', kdT: 0, hx: 7, hy: 7, fx: 7, fy: 7, mv: 1, dir: 'd' },
+  scene, ground: st => groundSvg(st), groundKey: st => lidTh(st).toFixed(3),
+  stats: st => [
+    { label: 'Console', value: !st.pow ? 'Éteinte' : st.lid < .9 ? 'En veille' : { hs: 'Avertissement', menu: 'Menu DS', boot: 'Chargement', title: 'Écran titre', start: 'Écran titre', play: 'En jeu' }[st.phase] },
+    { label: 'Cartouche', value: st.cartP <= 0 ? 'Sur sa boîte' : st.cartP >= 1 ? 'Insérée' : 'En chemin' } ],
+  buttons: [
+    { label: 'Ouvrir la console', onClick: st => toggleLid(st) },
+    { label: 'Insérer la cartouche', onClick: st => toggleCart(st) },
+    { label: 'Allumer la console', onClick: st => togglePower(st) },
+    { label: 'Lancer le jeu', onClick: st => launch(st) },
+    { label: 'Appuyer sur START', onClick: st => startBtn(st) } ],
+  acts: { cart: st => toggleCart(st), power: st => togglePower(st), stylus: st => launch(st), screen: st => launch(st), start: st => startBtn(st),
+    A: st => st.phase === 'title' ? startBtn(st) : (lightKey(st, 'A'), run()), B: st => (lightKey(st, 'B'), run()), X: st => (lightKey(st, 'X'), run()), Y: st => (lightKey(st, 'Y'), run()),
+    select: st => (lightKey(st, 'select'), run()), du: st => move(st, 'u'), dd: st => move(st, 'd'), dl: st => move(st, 'l'), dr: st => move(st, 'r') },
+  params: (st, q) => {
+    if (q.has('lid')){ st.lid = st.lidT = +q.get('lid'); }
+    if (q.has('cart')){ st.cartP = +q.get('cart'); st.cartT = st.cartP >= 1 ? 1 : 0; }
+    if (q.has('phase')){ st.phase = q.get('phase'); st.pow = st.phase !== 'off'; st.scr = st.pow && st.lid > .9 ? 1 : 0; st.pt = +(q.get('pt') || 5); }
+    if (q.has('sty')){ const [n, px, py] = q.get('sty').split(':'); st.sty.pose = POSE[n](px ? ptB(+px, +py) : null); }
+  },
+});
+xrMount(() => ui, () => '');
+// the buttons say what they will do now (open or close, insert or take out, switch on or off)
+(() => { const r0 = ui.render, st = ui.st;
+  ui.render = () => { r0(); const bs = document.querySelectorAll('#btns .act'), set = (b, t) => { if (b && b.textContent !== t) b.textContent = t; };
+    set(bs[0], st.lidT ? 'Fermer la console' : 'Ouvrir la console'); set(bs[1], st.cartT ? 'Retirer la cartouche' : 'Insérer la cartouche');
+    set(bs[2], st.pow ? 'Éteindre la console' : 'Allumer la console'); };
+  ui.render();
+  const css = document.createElement('style');
+  css.textContent = '@keyframes cfblink{0%,55%{opacity:1}70%,100%{opacity:.15}}.cf-blink{animation:cfblink 1.2s infinite}'
+    + '@keyframes cfflow{to{stroke-dashoffset:calc(-1*var(--d))}}.cf-flow{animation:cfflow .6s linear infinite}';
+  document.head.appendChild(css);
+})();
+// tests: ?sim=Ouvrir@0.2,Insérer@2&at=5 presses the buttons at those times (s) in a fast simulation, then draws once;
+// ?shot=1 hides the page around the drawing; ?bench=1 times a redraw
+(() => { const q = new URLSearchParams(location.search), st = ui.st;
+  if (q.has('at')){ const acts = { ouvrir: s => { s.lidT = 1; }, fermer: s => { s.lidT = 0; }, 'insérer': s => { s.cartT = 1; }, retirer: s => { s.cartT = 0; },
+      allumer: togglePower, 'éteindre': togglePower, lancer: launch, appuyer: startBtn, haut: s => move(s, 'u'), bas: s => move(s, 'd'), gauche: s => move(s, 'l'), droite: s => move(s, 'r') };
+    const ev = (q.get('sim') || '').split(',').filter(Boolean).map(s => { const [w, t] = s.split('@'); return [acts[w.toLowerCase()], +t]; }).sort((a, b) => a[1] - b[1]);
+    SIM = true; let t = 0, i = 0; const end = +q.get('at');
+    while (t < end){ while (i < ev.length && ev[i][1] <= t) ev[i++][0](st); tick(st, 1/60); t += 1/60; }
+    SIM = false; ui.render(); }
+  if (q.get('shot') === '1'){ const cs = document.createElement('style');
+    cs.textContent = '.actions,#stats,.vset,.zchip,body>header,.controls,.made-with,.lgd,.toast{visibility:hidden!important}'; document.head.appendChild(cs); }
+  if (q.get('bench') === '1'){ const t0 = performance.now(); for (let i = 0; i < 5; i++) ui.render(); document.documentElement.dataset.bench = ((performance.now() - t0)/5).toFixed(1); }
+})();
+/* ---------- la page en français ---------- */
+(() => {
+  const tr = { 'Hand-drawn wobble': 'Trait tremblé', 'Colour': 'Couleur', 'View': 'Vue', 'Labels': 'Étiquettes' };
+  document.querySelectorAll('.ctl label').forEach(l => { if (tr[l.textContent]) l.textContent = tr[l.textContent]; });
+  const set = (id, t) => { const e = document.getElementById(id); if (e) e.textContent = t; };
+  set('vreset', 'Vue de face'); set('vspin', 'Faire pivoter'); set('xrb', 'Transparence'); set('lblb', 'Étiquettes');
+  const pn = { mustard: 'moutarde', tomato: 'tomate', mint: 'menthe', cobalt: 'cobalt', blush: 'rose' };
+  document.querySelectorAll('#pals .sw').forEach(b => { if (pn[b.title]) b.title = pn[b.title]; });
+  const mwl = document.querySelector('.made-with a'); if (mwl) mwl.textContent = 'Fait avec Colorfigures';
+  if (/\/figures\/[^/]*$/.test(location.pathname)){
+    const hd = document.querySelector('body > header'); if (hd) hd.insertAdjacentHTML('beforeend', '<span><a href="../" style="color:inherit">← Toutes les figures</a></span>');
+    if (mwl) mwl.insertAdjacentHTML('beforebegin', '<a href="../">← Toutes les figures</a> · '); }
+  addEventListener('load', () => setTimeout(() => {
+    for (const [c, t] of [['.zm', 'Dézoomer'], ['.zp', 'Taille normale'], ['.zi', 'Zoomer']]){ const e = document.querySelector(c); if (e) e.setAttribute('aria-label', t); } }, 0));
+})();
+/* ---------- grand écran et plein écran ---------- */
+(() => {
+  const css = document.createElement('style');
+  css.textContent = `@media (min-width:561px){
+      :root{--figw:max(760px,min(1800px,calc((100vh - 250px)*1.3333)))}
+      body>header,.stage,#fig,.controls,.made-with,.lgd{max-width:var(--figw)!important}
+      html.fs{--figw:min(calc(100vw - 32px),calc((100vh - 24px)*1.3333))}
+      html.fs body{padding-top:10px;padding-bottom:10px}
+      html.fs body>header,html.fs .controls,html.fs .made-with{display:none!important}}
+    @media (min-width:1800px) and (min-height:1050px){.actions,#stats,.vset,.zchip{zoom:1.3}}`;
+  css.textContent += `
+    .zchip .fsb{display:inline-grid;place-items:center}
+    .fsb svg{width:12px;height:12px}`;
+  document.head.appendChild(css);
+  let rt = 0; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => ui.render(), 150); });
+  const root = document.documentElement, enter = root.requestFullscreen || root.webkitRequestFullscreen;
+  if (!enter) return;
+  const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const toggle = () => isFs() ? (document.exitFullscreen || document.webkitExitFullscreen).call(document) : enter.call(root);
+  const icon = out => `<svg viewBox="0 0 16 16" fill="none" stroke="#231e16" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${out
+    ? 'M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5' : 'M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5'}"/></svg>`;
+  let btn = null;
+  const sync = () => { root.classList.toggle('fs', isFs());
+    if (btn){ btn.innerHTML = icon(isFs()); btn.title = isFs() ? 'Quitter le plein écran (F)' : 'Plein écran (F)'; btn.setAttribute('aria-label', btn.title); }
+    dispatchEvent(new Event('resize')); requestAnimationFrame(() => ui.render()); };
+  document.addEventListener('fullscreenchange', sync); document.addEventListener('webkitfullscreenchange', sync);
+  addEventListener('load', () => setTimeout(() => { const chip = document.querySelector('.zchip'); if (!chip) return;
+    btn = document.createElement('button'); btn.type = 'button'; btn.className = 'fsb'; btn.onclick = toggle; chip.prepend(btn); sync(); }, 0));
+  addEventListener('keydown', e => { if (e.key.toLowerCase() !== 'f' || e.metaKey || e.ctrlKey || e.altKey || /input|textarea/i.test(e.target.tagName)) return; e.preventDefault(); toggle(); });
+})();
+</script></body></html>
