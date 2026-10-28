@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sous-marin</title></head><body>
+<script src="core.js"></script>
+<script>
+/* ============================================================
+   Fig. 06 · Sous-marin : plonger et faire surface
+   ------------------------------------------------------------
+   How it really works (one button per step; flotation only, no weapons):
+   Afloat, the main ballast tanks (ballasts) at the bow and the stern are full of air: the boat weighs less than the
+   water it displaces, so it floats with the sail and the top of the hull out of the water.
+   1. Plonger: the vents (purges) on top of the ballast tanks open. Air escapes through them (a plume of spray), sea
+      water comes in through the flood openings at the bottom of the tanks, which are always open to the sea. The boat
+      becomes as heavy as the water it displaces (neutral buoyancy); with the propeller turning and the diving planes
+      tilted down, it goes down to periscope depth (the top of the sail about 1 m under the surface). Vents shut.
+   2. Descendre à 20 m: the buoyancy stays neutral; the planes (on the sail and at the stern) and the slow propeller
+      push the boat bow down to 20 m, then level it. Remonter: the same, bow up, back to periscope depth.
+   3. Sortir le périscope: at periscope depth the periscope rises out of the sail and its head comes out of the water.
+      Deeper, the boat first comes back up to periscope depth.
+   4. Faire surface: vents shut, compressed air from the bottles goes through pipes into the top of the ballast tanks
+      and pushes the water out through the bottom openings (bubbles). The boat becomes lighter than the water it
+      displaces and rises to the surface.
+   The trim tanks (caisses d'assiette) and the compensating tank (caisse de réglage) fine-tune weight and balance.
+   Depths: 5 units = 1 m. "Profondeur" is the depth of the top of the hull (0 m afloat, 6 m at periscope depth, 20 m).
+
+   Parts list (boat units: 1 = 25 cm; hull 60 m long, 6.5 m across):
+   scene: a block of sea on the paper (sand and rock under the sea floor, water 30 m deep), rocks, seaweed, a
+          starfish, a few fish, a depth scale on the far corner.
+   outside: hull (rounded bow, tapered stern), sail (kiosque) with two sail planes and the periscope, cruciform stern
+          (two stern planes, upper and lower rudder), five-blade propeller, vent grilles on top of the ballast tanks,
+          flood openings low on both sides, a hatch.
+   inside: forward and aft ballast tanks (outside the pressure hull), pressure hull (coque épaisse) with its domed
+          ends, deck, control room (two consoles, the periscope well), compressed-air bottles and their pipes to both
+          ballast tanks, two vent valves, compensating tank, two trim tanks, batteries, diesel engine, electric motor,
+          shaft line through the aft ballast tank to the propeller.
+   ============================================================ */
+
+/* ---------- dimensions ---------- */
+const DX = 130, DY = 340, Z0 = 20, ZW = 170;              // block of sea: across (x), along (y), sea floor, surface
+const SK = 1.25, SCM = 5;                                 // the boat is modelled in its own units (4 to the metre), drawn 1.25 times larger; 5 units = 1 m in the sea
+const XC = 65, YC = 170, HR = 13;                         // the boat's axis (x, middle y) and hull radius (boat units)
+const Z_SURF = ZW - 9, Z_PERI = ZW - 46, Z_DEEP = ZW - 116; // axis height afloat, at periscope depth (sail top 1 m under), at 20 m
+const PH = 11.5;                                          // pressure hull radius
+const SAIL_TOP = HR + 20, SP_Z = HR + 12;                 // top of the sail, height of the sail planes
+const SAIL_PLAN = [...[0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => { const b = i*Math.PI/8; return [4*Math.cos(b), 54 + 4*Math.sin(b)]; }), [-2, 26], [2, 26]];
+const sailHalf = la => 2 + 2*Math.max(0, Math.min(1, (la - 26)/28));
+const V_FWD = 100, V_AFT = -80;                           // the vents along the hull
+const HOLES = [[90, 96, 102], [-70, -77, -84, -91]];      // flood openings (stations) of the forward and aft tanks
+// hull radius along the axis (la > 0 toward the bow): rounded bow, long parallel middle, tapered stern
+const rOf = la => la > 88 ? HR*Math.sqrt(Math.max(0, 1 - ((la - 88)/33)**2)) : la > -50 ? HR : HR - (HR - 2.4)*Math.pow(Math.min(1, (-50 - la)/69), 1.8);
+const ST_HULL = [121, 120.4, 119.2, 117.5, 115, 111.5, 107, 101.5, 95, 88, 70, 50, 26, 0, -25, -50, -58, -66, -74, -82, -90, -98, -105, -111, -116, -119];
+const WAT = { l: '#86c8ec', m: '#4f9fd2', d: '#2f78ad' }, WATB = { l: '#5a9ee0', m: '#3576c4', d: '#22559a' }, GREY = matOf('#c3c8cd'), PROPM = matOf('#c8963e');
+const BOTTLE = matOf('#6aa274'), BATT = matOf('#565c66'), MOTOR = matOf('#5b7fa6'), DIESEL = matOf('#9aa5b0'), TANKM = matOf('#dfe4e8');
+const SANDM = matOf('#e6cf96'), ROCKM = matOf('#9a8c78'), WEED = '#4f9a52';
+const cl01 = v => Math.max(0, Math.min(1, v));
+const boxOf = pts => [[0, 1, 2].map(i => Math.min(...pts.map(p => p[i]))), [0, 1, 2].map(i => Math.max(...pts.map(p => p[i])))];
+
+/* ---------- the boat's own axes ---------- */
+// SUB: where the boat is (o) and how it is pitched (A along the axis toward the bow, U up through the sail).
+// CUT: while drawing what sticks out of the water, every face is cut at the waterline.
+let SUB = null, CUT = null;
+const pose = st => { const t = st.th*Math.PI/180, c = Math.cos(t), s = Math.sin(t); return { o: [XC, YC, st.zc], A: [0, c, -s], U: [0, s, c] }; };
+const W = (lx, la, lz) => [SUB.o[0] + SK*lx, SUB.o[1] + SK*(la*SUB.A[1] + lz*SUB.U[1]), SUB.o[2] + SK*(la*SUB.A[2] + lz*SUB.U[2])];
+const dirW = (lx, la, lz) => [lx, la*SUB.A[1] + lz*SUB.U[1], la*SUB.A[2] + lz*SUB.U[2]];
+// a ring round the axis, a ring round an upright (lz) axis, a box in the boat's axes (two rings)
+const ringL = (la, r, n = 24) => Array.from({ length: n }, (_, i) => { const a = i/n*2*Math.PI; return W(r*Math.cos(a), la, r*Math.sin(a)); });
+const vRing = (cx, cla, lz, r, n = 12) => Array.from({ length: n }, (_, i) => { const a = i/n*2*Math.PI; return W(cx + r*Math.cos(a), cla + r*Math.sin(a), lz); });
+const lboxR = (x0, x1, a0, a1, z0, z1) => [[W(x0, a0, z0), W(x1, a0, z0), W(x1, a0, z1), W(x0, a0, z1)], [W(x0, a1, z0), W(x1, a1, z0), W(x1, a1, z1), W(x0, a1, z1)]];
+// a flat plate: its outline (mid-surface) and half its thickness along t
+const plateR = (pts, t, h) => [pts.map(p => p.map((v, i) => v - t[i]*h)), pts.map(p => p.map((v, i) => v + t[i]*h))];
+
+/* ---------- convex solids, cut at a height ---------- */
+function clipZ(poly, c, keepAbove){ const out = [], n = poly.length;
+  for (let i = 0; i < n; i++){ const p = poly[i], q = poly[(i + 1) % n], ip = keepAbove ? p[2] >= c : p[2] <= c, iq = keepAbove ? q[2] >= c : q[2] <= c;
+    if (ip) out.push(p);
+    if (ip !== iq){ const t = (c - p[2])/(q[2] - p[2]); out.push([p[0] + t*(q[0] - p[0]), p[1] + t*(q[1] - p[1]), c]); } }
+  return out; }
+const cutPoly = (poly, lo, hi) => { let q = poly; if (lo > -1e8) q = clipZ(q, lo, true); if (q.length >= 3 && hi < 1e8) q = clipZ(q, hi, false); return q; };
+const newell = q => { const n = [0, 0, 0];
+  for (let i = 0; i < q.length; i++){ const a = q[i], b = q[(i + 1) % q.length]; n[0] += (a[1] - b[1])*(a[2] + b[2]); n[1] += (a[2] - b[2])*(a[0] + b[0]); n[2] += (a[0] - b[0])*(a[1] + b[1]); }
+  const l = Math.hypot(...n); return l > 1e-9 ? n.map(v => v/l) : null; };
+// where a convex solid meets the plane z = h (a convex outline)
+function section(faces, h){ const pts = [];
+  for (const q of faces) for (let i = 0; i < q.length; i++){ const a = q[i], b = q[(i + 1) % q.length];
+    if ((a[2] - h)*(b[2] - h) < 0){ const t = (h - a[2])/(b[2] - a[2]); pts.push([a[0] + t*(b[0] - a[0]), a[1] + t*(b[1] - a[1])]); } }
+  return pts.length >= 3 ? hull(pts).map(([x, y]) => [x, y, h]) : null; }
+// A convex solid lofted through rings (closed, equal length), the end rings as caps, kept between lo and hi (and above
+// CUT). o: { w: silhouette ink, lo, hi, top: colour of the cut face at hi, inner: only the far side seen from inside (a
+// ghost), foam: a white line where it comes out of the water, noInk, out: collects the outline points }
+function solid(rings, shade, o = {}){
+  const lo = Math.max(o.lo ?? -1e9, CUT ?? -1e9), hi = o.hi ?? 1e9;
+  let zmin = 1e9, zmax = -1e9; for (const r of rings) for (const p of r){ if (p[2] < zmin) zmin = p[2]; if (p[2] > zmax) zmax = p[2]; }
+  if (zmax <= lo || zmin >= hi) return '';
+  const faces = [], cen = avg(rings.flat());
+  for (let r = 0; r < rings.length - 1; r++){ const A = rings[r], B = rings[r + 1], n = A.length;
+    for (let i = 0; i < n; i++) faces.push([A[i], A[(i + 1) % n], B[(i + 1) % n], B[i]]); }
+  faces.push(rings[0], rings[rings.length - 1]);
+  let s = '', pre = ''; const pts = [];
+  for (const q of faces){
+    let nr = newell(q); if (!nr) continue;
+    if (dot(nr, sub(avg(q), cen)) < 0) nr = nr.map(v => -v);
+    const c = cutPoly(q, lo, hi); if (c.length < 3) continue;
+    for (const p of c) pts.push(p);
+    const nv = o.inner ? nr.map(v => -v) : nr;
+    if (vis(nv)) s += face(pd(c), shade(nv));
+  }
+  if (!o.inner && hi < zmax){ const sec = section(faces, hi); if (sec){ s += face(pd(sec), o.top || shade([0, 0, 1])); for (const p of sec) pts.push(p); } }
+  if (o.foam && CUT != null && zmin < CUT && zmax > CUT){ const sec = section(faces, CUT);
+    if (sec) pre = `<path d="${pd(sec)}" fill="none" stroke="#fff" stroke-width="${f(2.4*INK_K)}" stroke-linejoin="round" opacity=".95"/>`; }
+  if (o.out) for (const p of pts) o.out.push(p);
+  if (!o.inner && !o.noInk && pts.length) s += hullInk(pts, o.w ?? 1.1);
+  return pre + s;
+}
+const part = (rings, shade, o = {}) => ({ box: boxOf(rings.flat()), svg: solid(rings, shade, o) });
+// a flat patch, cut at the waterline
+const cface = (q, c, w = .7) => { const k = CUT == null ? q : cutPoly(q, CUT, 1e9); return k.length >= 3 ? fill(pd(k), c) + (w ? ink(pd(k), w) : '') : ''; };
+// a polyline, keeping only what is above the waterline in that pass
+function cpaths(pts){ if (CUT == null) return [pts]; const out = []; let cur = [];
+  for (let i = 0; i < pts.length; i++){ const p = pts[i], up = p[2] >= CUT;
+    if (i){ const q = pts[i - 1], uq = q[2] >= CUT;
+      if (up !== uq){ const t = (CUT - q[2])/(p[2] - q[2]), x = [q[0] + t*(p[0] - q[0]), q[1] + t*(p[1] - q[1]), CUT]; if (up) cur = [x]; else { cur.push(x); out.push(cur); cur = []; } } }
+    if (up) cur.push(p); }
+  if (cur.length > 1) out.push(cur); return out.filter(c => c.length > 1); }
+// a pipe or a shaft drawn as two strokes (ink, then colour)
+function tube(pts, r, col){ const w = 2*r*CAM_K; let s = '';
+  for (const c of cpaths(pts)){ const d = 'M' + c.map(p => { const q = P(...p); return f(q[0]) + ' ' + f(q[1]); }).join('L');
+    s += `<path d="${d}" fill="none" stroke="${INK}" style="stroke-width:${f(w + 1.6*INK_K)}" stroke-linecap="round" stroke-linejoin="round"/>`
+      + `<path d="${d}" fill="none" stroke="${col}" style="stroke-width:${f(w)}" stroke-linecap="round" stroke-linejoin="round"/>`; }
+  return s; }
+const cline = (pts, w = .7, col = INK, extra = '') => cpaths(pts).map(c => `<path d="${pd(c, false)}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" ${extra}/>`).join('');
+function lcCallouts(items){
+  if (!items.length || !labelsShown()) return '';
+  const svgEl = document.getElementById('fig'), vb = svgEl.viewBox.baseVal, ctm = svgEl.getScreenCTM();
+  const k = INK_K*Math.min(1, Math.pow(760/(svgEl.clientWidth || 760), .75)), u = window.LBL_U ? LBL_U() : 0, fs = u ? 10*u : 8.6*k, hgt = u ? 17*u : fs*1.8, gap = hgt + (u ? 3*u : 3*k);
+  const below = id => { const el = document.getElementById(id); if (!el || !ctm || u) return -1e9;
+    const r = el.getBoundingClientRect(); return new DOMPoint(r.left, r.bottom + 10).matrixTransform(ctm.inverse()).y + hgt/2; };
+  const pts = items.map(it => { const [X, Y] = P(...it.at); return { ...it, X, Y }; }).sort((a, b) => a.X - b.X), half = Math.ceil(pts.length/2);
+  let s = '';
+  for (const [col, side, top] of [[pts.slice(0, half), -1, below('btns')], [pts.slice(half), 1, Math.max(below('stats'), below('xrb'))]]){
+    const t0 = Math.max(vb.y + hgt, top);
+    col.sort((a, b) => a.Y - b.Y);
+    let y = -1e9; for (const c of col){ c.py = Math.max(c.Y, y + gap, t0); y = c.py; }
+    const over = col.length ? col[col.length - 1].py - (vb.y + vb.height - hgt) : 0;
+    if (over > 0){ const room = col[0].py - t0; for (const c of col) c.py -= Math.min(over, room); }
+    for (const c of col){
+      c.n = ((window.__ln || (window.__ln = {}))[c.text] || (__ln[c.text] = Object.keys(__ln).length + 1));
+      const w = u ? hgt*(c.n > 9 ? 1.3 : 1) : c.text.length*fs*.62 + fs*1.5;
+      const px = side < 0 ? vb.x + 3*k + w/2 : vb.x + vb.width - 3*k - w/2, ex = px - side*w/2;
+      s += `<g class="tag${c.on ? ' on' : ''}" data-n="${c.n}" data-t="${c.text}"><path d="M${f(c.X)} ${f(c.Y)}L${f(ex - side*4*k)} ${f(c.py)}L${f(ex)} ${f(c.py)}" fill="none" stroke="${INK}" stroke-width="1"/>`
+        + `<circle cx="${f(c.X)}" cy="${f(c.Y)}" r="${f(1.4*k)}" fill="${INK}"/>`
+        + `<rect x="${f(px - w/2)}" y="${f(c.py - hgt/2)}" width="${f(w)}" height="${f(hgt)}" rx="${f(hgt/2)}" fill="${c.on ? 'var(--accent,#f4b829)' : '#fff4d6'}" stroke="${INK}" stroke-width="1.2"/>`
+        + `<text x="${f(px)}" y="${f(c.py + fs*.36)}" font-size="${f(fs)}" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-weight="800" letter-spacing=".04em" fill="${INK}">${u ? c.n : c.text}</text></g>`; } }
+  return s;
+}
+
+/* ---------- the boat, outside ---------- */
+const hullRings = () => ST_HULL.map(la => ringL(la, rOf(la)));
+// a patch on the hull's skin: angles a0..a1 (deg, 0 = the +x side, 90 = the top), stations la0..la1, raised a little
+const skinPt = (a, la, lift = .18) => { const r = rOf(la) + lift, t = a*Math.PI/180; return W(r*Math.cos(t), la, r*Math.sin(t)); };
+const skin = (a0, a1, la0, la1) => [skinPt(a0, la0), skinPt(a1, la0), skinPt(a1, la1), skinPt(a0, la1)];
+const skinN = a => { const t = a*Math.PI/180; return dirW(Math.cos(t), 0, Math.sin(t)); };
+const holeAngle = side => side > 0 ? -38 : 218;
+function hullDetails(st, m){
+  let s = '';
+  // vent grilles on top of both ballast tanks
+  for (const la of [V_FWD, V_AFT]) if (vis(skinN(90))){
+    s += cface(skin(78, 102, la - 4, la + 4), m.d, .8);
+    for (let i = -3; i <= 3; i += 2) s += cline([skinPt(80, la + i), skinPt(100, la + i)], .55, mix(m.d, '#ffffff', .35)); }
+  // flood openings, low on both sides, always open to the sea
+  for (const side of [1, -1]){ const a = holeAngle(side); if (!vis(skinN(a))) continue;
+    for (const g of HOLES) for (const la of g) s += cface(skin(a - 7, a + 7, la - 1.9, la + 1.9), '#1f2a33', .6); }
+  // the hatch behind the sail
+  if (vis(skinN(90))){ const ring = Array.from({ length: 14 }, (_, i) => { const t = i/14*2*Math.PI, x = 2.4*Math.cos(t); return W(x, -20 + 2.4*Math.sin(t), Math.sqrt(HR*HR - x*x) + .25); });
+    s += cface(ring, m.m, .8); }
+  return s;
+}
+function sailRings(){ return [SAIL_PLAN.map(([x, la]) => W(x, la, Math.sqrt(HR*HR - x*x) - .3)), SAIL_PLAN.map(([x, la]) => W(x, la, SAIL_TOP))]; }
+// a plane turned about its spanwise axis (at station pv) by the planes' angle: leading edge down to dive
+function planeRings(side, pts, pv, z0, ang){
+  const a = ang*Math.PI/180, c = Math.cos(a), s = Math.sin(a);
+  const q = pts.map(([x, la]) => W(side*x, pv + (la - pv)*c, z0 - (la - pv)*s));
+  return plateR(q, norm(dirW(0, s, c)), .45*SK);
+}
+const sailPlane = (side, st, m) => solid(planeRings(side, [[sailHalf(48.5), 49], [13, 47.5], [13, 41.5], [sailHalf(40), 40]], 44.5, SP_Z, st.pl), n => tone(n, m), { w: .9 });
+const sternPlane = (side, st, m) => solid(planeRings(side, [[rOf(-100) - .5, -100], [13, -106.5], [13, -114], [rOf(-114) - .5, -114]], -108, 0, st.pl), n => tone(n, m), { w: .9 });
+function rudder(up, m){ const k = up ? 1 : -1;
+  return solid(plateR([[0, -100, k*(rOf(-100) - .5)], [0, -106.5, k*13], [0, -114, k*13], [0, -114, k*(rOf(-114) - .5)]].map(([x, la, z]) => W(x, la, z)), [1, 0, 0], .45*SK), n => tone(n, m), { w: .9, foam: up }); }
+function propSvg(st){
+  const blades = [];
+  for (let i = 0; i < 5; i++){ const t0 = st.prop + i*2*Math.PI/5, lead = [], trail = [];
+    for (let j = 0; j <= 5; j++){ const r = 2.3 + 6.3*j/5, w = [.34, .42, .44, .4, .3, .1][j], sk = .3*j/5;
+      const pt = (an, la) => W(r*Math.cos(an), la, r*Math.sin(an));
+      lead.push(pt(t0 + sk + w, -120.4)); trail.push(pt(t0 + sk - w, -123)); }
+    blades.push([...lead, ...trail.reverse()]); }
+  blades.sort((a, b) => depthOf(avg(a)) - depthOf(avg(b)));
+  let s = '';
+  for (const q of blades){ const n = newell(q) || [0, 1, 0], nv = vis(n) ? n : n.map(v => -v); s += cface(q, toneI(nv, PROPM), .8); }
+  return s + solid([ringL(-118.6, 2.6, 14), ringL(-121.5, 2.6, 14), ringL(-123.8, 1.7, 14), ringL(-125.2, .4, 14)], n => toneI(n, PROPM), { w: 1 });
+}
+const periTop = st => SAIL_TOP + 2 + 10*st.peri;
+function periscope(st){
+  const top = periTop(st), body = n => toneI(n, METAL);
+  let s = solid([vRing(0, 44, SAIL_TOP - .5, .9), vRing(0, 44, top - 3, .9)], body, { w: .9, foam: true })
+    + solid([vRing(0, 44, top - 3.2, 1.25), vRing(0, 44, top, 1.25)], body, { w: 1, foam: true });
+  if (vis(SUB.A)) s += cface([W(-.7, 45.3, top - 2.3), W(.7, 45.3, top - 2.3), W(.7, 45.3, top - 1.1), W(-.7, 45.3, top - 1.1)], '#2a3540', .5);
+  return s;
+}
+function sailGroup(st, m, k, nearX){
+  const nearSide = nearX ? 1 : -1, sail = solid(sailRings(), n => tone(n, m), { w: 1.8, foam: true, top: mix(m.l, '#ffffff', .15) });
+  let win = '';
+  if (k < 1) for (let i = 2; i <= 6; i++){ const [x0, a0] = SAIL_PLAN[i - 1], [x1, a1] = SAIL_PLAN[i], n = dirW(x0 + x1, (a0 + a1)/2 - 54, 0);
+    if (vis(n)) win += cface([W(x0*1.03, a0, SAIL_TOP - 3.2), W(x1*1.03, a1, SAIL_TOP - 3.2), W(x1*1.03, a1, SAIL_TOP - 1.6), W(x0*1.03, a0, SAIL_TOP - 1.6)], '#2c3a44', .5); }
+  const body = sail + win;
+  return sailPlane(-nearSide, st, m) + (k > 0 ? `<g opacity="${f(1 - .75*k)}">${body}</g><g opacity="${f(k)}">${periInside(st)}</g>` : body)
+    + act('planes', sailPlane(nearSide, st, m)) + act('scope', periscope(st));
+}
+
+/* ---------- the boat, inside ---------- */
+const PH_RINGS = () => [[80, 8], [78.6, 10.6], [76, PH], [-60, PH], [-62.6, 10.6], [-64, 8]].map(([la, r]) => ringL(la, r, 24));
+const BAL_ST = { fwd: [82, 88, 95, 101.5, 107, 111.5, 115, 117.5, 119.2, 120.2], aft: [-65, -74, -82, -90, -98] };
+function waterIn(st, which){
+  const rings = BAL_ST[which].map(la => ringL(la, Math.max(.25, rOf(la) - .7), 20));
+  let zmin = 1e9, zmax = -1e9; for (const r of rings) for (const p of r){ zmin = Math.min(zmin, p[2]); zmax = Math.max(zmax, p[2]); }
+  if (st.bal < .004) return '';
+  return `<g opacity=".92">${solid(rings, n => toneI(n, WATB), { hi: zmin + st.bal*(zmax - zmin), top: '#5c9be0', w: .8 })}</g>`;
+}
+function ventValve(st, la){
+  const r = rOf(la), lift = .9*st.vent;
+  return solid([vRing(0, la, r - 5, 1.2), vRing(0, la, r - 1.6, 1.2)], n => toneI(n, METAL), { w: .7 })
+    + solid([vRing(0, la, r - 1.5 + lift, 1.9), vRing(0, la, r - 1 + lift, 1.9)], n => toneI(n, METAL), { w: .7 });
+}
+// the air pipes from the bottles to the top of both ballast tanks
+const PIPE_F = [[0, 66, -8.6], [0, 73, -8.6], [0, 77, -2], [0, 80.5, 6], [0, 95, 9.6]], PIPE_A = [[2.4, 66, -8.6], [6, 63, -4], [6, 60, 8.6], [6, -58, 8.6], [3, -66, 8.6], [0, -76, 8.2]];
+function airPipe(st, pts){ const w = pts.map(p => W(...p)); let s = tube(w, .55*SK, '#9aa6b1');
+  if (st.air) s += cline(w, f(.8*CAM_K), '#ffffff', `stroke-dasharray="${f(1.4*CAM_K)} ${f(3*CAM_K)}" stroke-dashoffset="${f(-st.clock*40)}"`);
+  return s; }
+function periInside(st){ const b = -6 + 10*st.peri, body = n => toneI(n, METAL);
+  return solid([vRing(0, 44, b + 2.5, .9), vRing(0, 44, SAIL_TOP - .5, .9)], body, { w: .8 }) + solid(lboxR(-1.4, 1.4, 42.4, 45.6, b, b + 2.6), n => toneI(n, DARK), { w: .8 }); }
+function ballastGroup(st, which){
+  const la = which === 'fwd' ? V_FWD : V_AFT;
+  let s = '';
+  if (which === 'aft'){ s += tube([W(0, -64, 0), W(0, -118.6, 0)], .8*SK, '#8f989b');
+    s += `<g opacity=".7">${solid([ringL(-98.4, rOf(-98.4) - .5, 20), ringL(-97.6, rOf(-97.6) - .5, 20)], n => toneI(n, GREY), { w: .6 })}</g>`; }
+  s += waterIn(st, which) + ventValve(st, la);
+  // water coming in (or pushed out) at the bottom openings on the near side
+  if (st.flowIn || st.air){ const side = vis([1, 0, 0]) ? 1 : -1, a = holeAngle(side)*Math.PI/180, sgn = st.flowIn ? 1 : -1;
+    for (const h of HOLES[which === 'fwd' ? 0 : 1]){ const r = rOf(h), o = W((r + 3.5)*Math.cos(a), h, (r + 3.5)*Math.sin(a)), i = W((r - 3)*Math.cos(a), h, (r - 3)*Math.sin(a));
+      const [p, q] = sgn > 0 ? [o, i] : [i, o], d = sub(q, p), hd = [q, sub(q, d.map(v => v*.45)).map((v, j) => v + [0, 1.4, 0][j]), sub(q, d.map(v => v*.45)).map((v, j) => v - [0, 1.4, 0][j])];
+      s += cline([p, q], f(1.1), WAT.d) + cface(hd, WAT.d, 0); } }
+  return s;
+}
+function pressureHull(st, k){
+  const rings = PH_RINGS();
+  let s = `<g opacity=".7">${solid(rings, n => mix(toneI(n, GREY), '#f2efe7', .35), { inner: true })}</g>`;
+  const below = [
+    part(lboxR(-4.5, 4.5, -34, 18, -10.4, -6.8), n => toneI(n, BATT), { w: .8 }),
+    { box: boxOf(lboxR(-4.2, 4.2, 21, 37, -10.2, -6.8).flat()), svg: tankSvg(-4.2, 4.2, 21, 37, -10.2, -6.8, .55) },
+    { box: boxOf(lboxR(-4, 4, 68, 75.5, -10, -6.8).flat()), svg: tankSvg(-4, 4, 68, 75.5, -10, -6.8, .5) },
+    { box: boxOf(lboxR(-4, 4, -56, -46, -10, -6.8).flat()), svg: tankSvg(-4, 4, -56, -46, -10, -6.8, .5) },
+    ...[-3.2, 0, 3.2].map(x => ({ box: boxOf([W(x - 1.6, 41, -10.2), W(x + 1.6, 66, -7)]),
+      svg: act('bottles', solid([vRing2(x, 41, -8.6, .3), vRing2(x, 42, -8.6, 1.6), vRing2(x, 65, -8.6, 1.6), vRing2(x, 66, -8.6, .3)], n => toneI(n, BOTTLE), { w: .8 })) })) ];
+  s += byDepthG(below);
+  // the deck, a grating: what is under it shows through
+  s += `<g opacity=".55">${solid(lboxR(-9.4, 9.4, -58, 74, -6.6, -6), n => toneI(n, GREY), { w: .7 })}</g>`;
+  const above = [
+    part(lboxR(-4.6, 4.6, -32, -10, -6, 1.5), n => toneI(n, DIESEL), { w: .9 }),
+    part(lboxR(-3, 3, -30, -12, 1.5, 3.4), n => toneI(n, DIESEL), { w: .7 }),
+    part([ringL(-50, 4.6, 16), ringL(-49, 5, 16), ringL(-39, 5, 16), ringL(-38, 4.6, 16)], n => toneI(n, MOTOR), { w: .9 }),
+    part(lboxR(-3, 3, -48, -40, -6, -4.4), n => toneI(n, DARK), { w: .6 }),
+    { box: boxOf([W(0, -38, 0), W(0, -60.5, 0)]), svg: tube([W(0, -38, 0), W(0, -60.5, 0)], .8*SK, '#8f989b') },
+    { box: boxOf(lboxR(3.6, 8, 30, 40, -6, -1).flat()), svg: consoleSvg(3.6, 8, 30, 40, 1) },
+    { box: boxOf(lboxR(-8, -3.6, 47, 56, -6, -1).flat()), svg: consoleSvg(-8, -3.6, 47, 56, -1) },
+    { box: boxOf(PIPE_A.map(p => W(...p))), svg: airPipe(st, PIPE_A) } ];
+  s += byDepthG(above);
+  s += `<g opacity=".16">${solid(rings, n => toneI(n, GREY), { noInk: true })}</g>` + `<g opacity=".7">${hullInk(rings.flat(), 1.4)}</g>`;
+  return s;
+}
+const vRing2 = (x, la, lz, r, n = 12) => Array.from({ length: n }, (_, i) => { const a = i/n*2*Math.PI; return W(x + r*Math.cos(a), la, lz + r*Math.sin(a)); });
+// a tank with water up to a share of its height: the water first, the tank's walls pale over it
+function tankSvg(x0, x1, a0, a1, z0, z1, lvl){
+  return solid(lboxR(x0 + .2, x1 - .2, a0 + .2, a1 - .2, z0 + .2, z0 + (z1 - z0)*lvl), n => toneI(n, WAT), { w: .5 })
+    + `<g opacity=".55">${solid(lboxR(x0, x1, a0, a1, z0, z1), n => toneI(n, TANKM), { w: .8 })}</g>`; }
+function consoleSvg(x0, x1, a0, a1, side){
+  let s = solid(lboxR(x0, x1, a0, a1, -6, -1), n => toneI(n, DIESEL), { w: .8 });
+  const xf = side > 0 ? x0 - .05 : x1 + .05, n = dirW(-side, 0, 0);
+  if (vis(n)) s += cface([W(xf, a0 + 2, -4.2), W(xf, a1 - 2, -4.2), W(xf, a1 - 2, -2), W(xf, a0 + 2, -2)], '#1d2a26', .5)
+    + cline([W(xf, a0 + 3, -3.4), W(xf, a1 - 4, -3.4)], .6, '#8af0ae') + cline([W(xf, a0 + 3, -2.7), W(xf, a1 - 6, -2.7)], .6, '#8af0ae');
+  return s; }
+function insides(st, k, bowSide){
+  const fwd = ballastGroup(st, 'fwd') + airPipe(st, PIPE_F), aft = ballastGroup(st, 'aft'), mid = pressureHull(st, k);
+  return `<g opacity="${f(k)}">` + (bowSide ? aft + mid + fwd : fwd + mid + aft) + `</g>`;
+}
+
+/* ---------- air out of the vents, bubbles out of the openings ---------- */
+function ventPuffs(st, la){
+  if (st.ventAge < 0) return '';
+  const base = W(0, la, rOf(la) + .4); let s = '';
+  for (let i = 0; i < 40; i++){ const b = i*.065; if (b > Math.min(st.ventAge, 2.6)) break; const a = st.ventAge - b; if (a > 1.1) continue;
+    const p = [base[0] + Math.sin(i*2.3)*(1.2 + 5*a), base[1] + Math.cos(i*1.7)*(1 + 4*a), base[2] + 30*a - 6*a*a];
+    const out = p[2] > ZW; if ((CUT != null) !== out) continue;
+    const r = out ? 1.1 + 3.2*a : .8 + .6*a, [X, Y] = P(...p);
+    s += `<circle cx="${f(X)}" cy="${f(Y)}" r="${f(r*CAM_K)}" fill="#ffffff" fill-opacity="${f(out ? .85*(1 - a/1.1) : .75)}" stroke="${out ? '#9bc7dd' : INK}" stroke-width=".5" stroke-opacity="${f(out ? .6*(1 - a/1.1) : .8)}"/>`; }
+  return s; }
+function bubbles(st, side){
+  if (st.blowAge < 0) return null;
+  const a0 = holeAngle(side)*Math.PI/180, pts = [];
+  const holes = HOLES.flat().map(la => { const r = rOf(la); return W((r + 1.5)*Math.cos(a0), la, (r + 1.5)*Math.sin(a0)); });
+  for (let i = 0; i < 80; i++){ const b = i*.034; if (b > Math.min(st.blowAge, 2.6)) break; const a = st.blowAge - b, h = holes[(i*3 + (side > 0 ? 0 : 1)) % holes.length];
+    const p = [h[0] + side*(2.5 + 3*a + Math.sin(i*1.9)), h[1] + Math.sin(i*2.7 + a*6)*1.4, h[2] + 34*a + 8*a*a];
+    if (p[2] >= ZW - .5) continue; pts.push([p, .7 + .45*Math.abs(Math.sin(i*1.3)) + .5*a]); }
+  if (!pts.length) return null;
+  const s = pts.map(([p, r]) => { const [X, Y] = P(...p); return `<circle cx="${f(X)}" cy="${f(Y)}" r="${f(r*CAM_K)}" fill="#ffffff" fill-opacity=".7" stroke="${INK}" stroke-width=".5"/>`; }).join('');
+  return { box: boxOf(pts.map(q => q[0])), svg: s };
+}
+
+/* ---------- the whole boat, in the order that is right from where the viewer stands ---------- */
+function subDraw(st, m, k){
+  const bowSide = dot(CAM_V, SUB.A) > 0, nearX = vis([1, 0, 0]), ns = nearX ? 1 : -1;
+  const prop = act('prop', propSvg(st)), out = [];
+  const shell = solid(hullRings(), n => tone(n, m), { noInk: true, foam: true, out }) + act('vents', hullDetails(st, m));
+  let s = bowSide ? prop : '';
+  s += rudder(false, m) + act('planes', sternPlane(-ns, st, m));
+  if (k > 0){
+    s += `<g opacity="${f(.5*k)}">${solid(hullRings(), n => mix(toneI(n, m), '#f2efe7', .55), { inner: true })}</g>` + insides(st, k, bowSide)
+      + `<g opacity="${f(1 - .8*k)}">${shell}</g>` + (out.length ? `<g opacity="${f(1 - .4*k)}">${hullInk(out, 2.8)}</g>` : '');
+  } else s += shell + (out.length ? hullInk(out, 2.8) : '');
+  s += act('planes', sternPlane(ns, st, m));
+  const aftG = rudder(true, m) + ventPuffs(st, V_AFT), fwdG = ventPuffs(st, V_FWD), sailG = sailGroup(st, m, k, nearX);
+  s += bowSide ? aftG + sailG + fwdG : fwdG + sailG + aftG;
+  if (!bowSide) s += prop;
+  return s;
+}
+// the boat's box (for sorting it with the fish and the bubbles)
+function subBox(st){ const pts = [W(-13, 121, -13), W(13, 121, 13), W(-13, -126, -13), W(13, -126, 13), W(0, 26, SAIL_TOP), W(0, 58, periTop(st)), W(0, -110, -13)];
+  return boxOf(pts); }
+
+/* ---------- the sea ---------- */
+const seaFloor = () => on(PZ(Z0), rectUV(0, 0, DX, DY));
+const ROCKS = [[20, 52, 9, 6], [110, 300, 11, 7], [26, 272, 6, 4], [116, 86, 7, 5], [74, 318, 6, 4]];
+const WEEDS = [[14, 80, 12], [24, 92, 10], [116, 272, 12], [106, 284, 10], [46, 26, 9], [92, 190, 10], [16, 200, 11], [120, 160, 8]];
+const FISH = [[24, 116, 60, 7, '#ee8a3a'], [31, 111, 76, 7, '#ee8a3a'], [21, 106, 92, 7, '#ee8a3a'], [108, 88, 280, 5, '#9fb9cc'], [116, 96, 220, 5, '#9fb9cc'], [27, 64, 200, 4, '#e6c34a']];
+function rock(x, y, r, h){ const ring = (z, k) => on(PZ(z), ellUV(x, y, r*k, r*.8*k, 12));
+  return { box: [[x - r, y - r, Z0 - 1], [x + r, y + r, Z0 + h]], svg: solid([ring(Z0 - .5, 1), ring(Z0 + h*.45, .88), ring(Z0 + h*.85, .55), ring(Z0 + h, .18)], n => toneI(n, ROCKM), { w: 1.1 }) }; }
+function weed(x, y, h){ let s = '';
+  for (let j = 0; j < 3; j++){ const pts = []; for (let i = 0; i <= 6; i++){ const t = i/6; pts.push([x + (j - 1)*1.6 + Math.sin(t*3 + j)*2*t, y + Math.cos(t*2.4 + j*2)*2.4*t, Z0 + h*(.7 + .15*j)*t]); }
+    s += tube(pts, .55, mix(WEED, '#ffffff', .12*j)); }
+  return { box: [[x - 4, y - 4, Z0], [x + 4, y + 4, Z0 + h]], svg: s }; }
+function groundSvg(st){
+  const nx = vis([1, 0, 0]), ny = vis([0, 1, 0]), xN = nx ? DX : 0, yN = ny ? DY : 0, xF = DX - xN, yF = DY - yN;
+  const cube = [[0, 0, 0], [DX, 0, 0], [DX, DY, 0], [0, DY, 0], [0, 0, ZW], [DX, 0, ZW], [DX, DY, ZW], [0, DY, ZW]];
+  let s = castShadow(cube.map(([x, y, z]) => [x, y, Math.min(z, 46)]), 0);    // a short shadow: the water lets most light through
+  // under the sea floor: sand over rock, seen on the two near sides
+  const xs = (x, z0, z1) => [[x, 0, z0], [x, DY, z0], [x, DY, z1], [x, 0, z1]], ys = (y, z0, z1) => [[0, y, z0], [DX, y, z0], [DX, y, z1], [0, y, z1]];
+  for (const [q, n] of [[xs, [nx ? 1 : -1, 0, 0]], [ys, [0, ny ? 1 : -1, 0]]]){ const c = q === xs ? xN : yN;
+    s += face(pd(q(c, 0, Z0 - 8)), toneI(n, ROCKM)) + face(pd(q(c, Z0 - 8, Z0)), toneI(n, SANDM)) + ink(pd(q(c, 0, Z0)), 1.2);
+    for (let i = 0; i < 6; i++){ const t = (i + .5)/6, z = 4 + (i % 3)*5; s += line(q === xs ? [[c, t*DY - 9, z], [c, t*DY + 9, z + 1.5]] : [[t*DX - 7, c, z], [t*DX + 7, c, z + 1.5]], .5); } }
+  // the far walls of the water, darker with depth
+  const bands = 6;
+  for (let b = 0; b < bands; b++){ const z1 = ZW - (ZW - Z0)*b/bands, z0 = ZW - (ZW - Z0)*(b + 1)/bands, c = mix('#c6e8f4', '#3f7fae', (b + .5)/bands);
+    s += face(pd(xs(xF, z0, z1)), c) + face(pd(ys(yF, z0, z1)), mix(c, '#ffffff', .1)); }
+  s += ink(pd(xs(xF, Z0, ZW)), .9) + ink(pd(ys(yF, Z0, ZW)), .9);
+  // the sea floor: sand ripples, rocks, seaweed, a starfish
+  s += face(pd(seaFloor()), SANDM.l) + ink(pd(seaFloor()), 1);
+  for (let i = 0; i < 26; i++){ const x = 12 + ((i*53) % 106), y = 14 + ((i*137) % (DY - 28)); s += line([[x - 9, y, Z0], [x - 3, y + 2, Z0], [x + 3, y - 1, Z0], [x + 9, y + 1, Z0]], .45); }
+  const star = Array.from({ length: 10 }, (_, i) => { const a = i/10*2*Math.PI + .3, r = i % 2 ? 1.7 : 4.4; return [96 + r*Math.cos(a), 136 + r*Math.sin(a), Z0 + .2]; });
+  s += shape(star, '#e0623d', .7);
+  s += byDepthG([...ROCKS.map(r => rock(...r)), ...WEEDS.map(w => weed(...w))]);
+  // depth scale on the far corner
+  const useX = Math.abs(CAM_V[0]) >= Math.abs(CAM_V[1]), wn = useX ? [xF ? -1 : 1, 0, 0] : [0, yF ? -1 : 1, 0], rt = cross(wn, [0, 0, 1]);
+  for (let d = 0; d <= 30; d += 10){ const z = ZW - d*SCM;
+    s += line([[xF, yF, z], [xF + (xF ? -8 : 8), yF, z]], .9) + line([[xF, yF, z], [xF, yF + (yF ? -8 : 8), z]], .9);
+    const along = useX ? [0, yF ? -1 : 1, 0] : [xF ? -1 : 1, 0, 0], o = P(...[xF, yF, z - 3].map((v, i) => v + along[i]*16));
+    s += `<text transform="${txM(o, Dv(...rt), Dv(0, 0, -1))}" font-size="8" fill="${INK}" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-weight="700">${d} m</text>`; }
+  return s;
+}
+function fishItem(st, [x, z, y0, v, col]){
+  const span = DY - 60, y = 30 + (((y0 - 30 - v*st.clock) % span) + span) % span, fade = Math.min(1, (y - 30)/20, (DY - 30 - y)/20);
+  const mat = matOf(col), prof = [[-6, 0], [-4.4, .62], [-1.5, 1], [2.2, .82], [4.8, .4]];
+  const rings = prof.map(([o, k]) => Array.from({ length: 10 }, (_, i) => { const a = i/10*2*Math.PI; return [x + .95*k*Math.cos(a), y + o, z + 2.3*k*Math.sin(a)]; }));
+  const body = solid(rings, n => toneI(n, mat), { w: .8 }), tail = solid(plateR([[x, y + 4.3, z], [x, y + 8.6, z + 2.8], [x, y + 8.6, z - 2.8]], [1, 0, 0], .2), n => toneI(n, mat), { w: .6 });
+  const side = vis([1, 0, 0]) ? 1 : -1, eye = P(x + side*.85, y - 3.6, z + .55);
+  const svg = (vis([0, 1, 0]) ? body + tail : tail + body) + `<circle cx="${f(eye[0])}" cy="${f(eye[1])}" r="${f(.45*CAM_K)}" fill="${INK}"/>`;
+  return { box: [[x - 1.2, y - 6, z - 3], [x + 1.2, y + 9, z + 3]], svg: `<g opacity="${f(Math.max(0, fade))}">${svg}</g>` };
+}
+// the water in front: the two near walls and the surface, pale and see-through, with a few ripples
+function waterFront(k){
+  const nx = vis([1, 0, 0]), ny = vis([0, 1, 0]), xN = nx ? DX : 0, yN = ny ? DY : 0;
+  const xw = [[xN, 0, Z0], [xN, DY, Z0], [xN, DY, ZW], [xN, 0, ZW]], yw = [[0, yN, Z0], [DX, yN, Z0], [DX, yN, ZW], [0, yN, ZW]], top = on(PZ(ZW), rectUV(0, 0, DX, DY));
+  const t = 1 - .6*k;    // paler in see-through, so the inside of the boat reads
+  let s = fill(pd(xw), '#5aaed6', `opacity="${f(.2*t)}"`) + fill(pd(yw), '#4fa6d2', `opacity="${f(.2*t)}"`) + fill(pd(top), '#8fd2ec', `opacity="${f(.34*t)}"`);
+  for (const [x, y, l] of [[22, 36, 14], [94, 64, 10], [38, 136, 12], [108, 180, 16], [18, 234, 10], [86, 270, 12], [54, 316, 14], [116, 18, 8]])
+    s += `<path d="${pd([[x, y, ZW], [x + 2, y + l/2, ZW], [x, y + l, ZW]], false)}" fill="none" stroke="#ffffff" stroke-width="1.1" opacity=".75"/>`;
+  s += `<path d="${pd([[0, DY*.18, ZW], [DX, DY*.06, ZW], [DX, DY*.11, ZW], [0, DY*.23, ZW]])}" fill="#ffffff" opacity=".22"/>`;
+  return s + ink(pd(top), 1.6) + line([[xN, yN, Z0], [xN, yN, ZW]], 1.6) + line([[xN, DY - yN, Z0], [xN, DY - yN, ZW]], 1.2) + line([[DX - xN, yN, Z0], [DX - xN, yN, ZW]], 1.2);
+}
+function floorShadow(st){
+  const pts = []; for (const la of [121, 100, 60, 0, -60, -100, -119]){ const r = rOf(la); for (const a of [0, 90, 180, 270]){ const t = a*Math.PI/180; pts.push(W(r*Math.cos(t), la, r*Math.sin(t))); } }
+  pts.push(W(0, 26, SAIL_TOP), W(0, 58, SAIL_TOP));
+  const op = .18 + .5*cl01(1 - (st.zc - Z0 - 20)/(Z_SURF - Z0));
+  return `<g opacity="${f(op)}">${castShadow(pts, Z0, seaFloor())}</g>`;
+}
+
+const moving = st => st.spin > .05, waterMoving = st => st.flowIn || st.air;
+function surfaceLabels(st){
+  const ns = vis([1, 0, 0]) ? 1 : -1, a = holeAngle(ns)*Math.PI/180, r = rOf(96);
+  return [
+    { at: W(ns*sailHalf(36), 36, SAIL_TOP - 8), text: 'KIOSQUE', on: false },
+    ...(st.peri > .3 ? [{ at: W(0, 44, periTop(st) - 1.5), text: 'PÉRISCOPE', on: st.peri < 1 }] : []),
+    { at: W(ns*12, 44.5, SP_Z), text: 'BARRES DE PLONGÉE', on: Math.abs(st.pl) > 2 },
+    { at: W(ns*12, -110, 0), text: 'BARRES ARRIÈRE', on: Math.abs(st.pl) > 2 },
+    { at: W(0, -110, 11), text: 'GOUVERNAIL', on: false },
+    { at: W(0, -122, 6), text: 'HÉLICE', on: moving(st) },
+    { at: W(0, V_FWD, rOf(V_FWD)), text: 'PURGES', on: st.vent > 0 },
+    { at: W(r*Math.cos(a), 96, r*Math.sin(a)), text: "ENTRÉES D'EAU", on: waterMoving(st) } ];
+}
+function insideLabels(st){
+  const ns = vis([1, 0, 0]) ? 1 : -1, a = holeAngle(ns)*Math.PI/180, r = rOf(96);
+  return [
+    { at: W(0, 108, -4), text: 'BALLAST AVANT', on: waterMoving(st) },
+    { at: W(0, -86, -3), text: 'BALLAST ARRIÈRE', on: waterMoving(st) },
+    { at: W(0, V_FWD, rOf(V_FWD) - 1.5), text: 'PURGES', on: st.vent > 0 },
+    { at: W(r*Math.cos(a), 96, r*Math.sin(a)), text: "ENTRÉES D'EAU", on: waterMoving(st) },
+    { at: W(0, 54, -7), text: "BOUTEILLES D'AIR COMPRIMÉ", on: !!st.air },
+    { at: W(ns*PH*.87, 10, PH*.5), text: 'COQUE ÉPAISSE', on: false },
+    { at: W(0, 29, -7.5), text: 'CAISSE DE RÉGLAGE', on: false },
+    { at: W(0, 71.5, -7.5), text: "CAISSES D'ASSIETTE", on: false },
+    { at: W(0, -8, -7), text: 'BATTERIES', on: moving(st) },
+    { at: W(0, -21, 3.4), text: 'MOTEUR DIESEL', on: false },
+    { at: W(0, -44, 5), text: 'MOTEUR ÉLECTRIQUE', on: moving(st) },
+    { at: W(0, -75, 0), text: "LIGNE D'ARBRE", on: moving(st) },
+    { at: W(ns*6, 35, -1), text: 'POSTE CENTRAL', on: false },
+    { at: W(0, 44, SAIL_TOP - 6), text: 'PÉRISCOPE', on: st.peri > 0 && st.peri < 1 },
+    { at: W(0, -122, 6), text: 'HÉLICE', on: moving(st) } ];
+}
+
+/* ---------- the scene ---------- */
+function scene(st, m){
+  SUB = pose(st); CUT = null;
+  const k = ease(st.xr || 0);
+  let s = floorShadow(st);
+  s += byDepthG([{ box: subBox(st), svg: subDraw(st, m, k) }, ...FISH.map(q => fishItem(st, q)), bubbles(st, 1), bubbles(st, -1)]);
+  s += waterFront(k);
+  CUT = ZW; s += subDraw(st, m, k); CUT = null;     // what sticks out of the water, over the surface
+  if (labelsShown()) s += lcCallouts(k > .6 ? insideLabels(st) : surfaceLabels(st));
+  return s;
+}
+
+/* ---------- what happens ---------- */
+// Each step is a manoeuvre; a button queues the steps it needs (diving before going deeper, coming up to periscope
+// depth before raising the periscope), and they run one after another.
+const TARGET = { flood: 'peri', down: 'deep', up: 'peri', blow: 'surf' };
+const DUR = { flood: 4.8, down: 4.2, up: 4.2, blow: 4.4, scopeUp: 1, scopeDown: 1 };
+let ui, looping = false, SIM = false;
+function tick(st, dt){
+  let busy = false;
+  st.clock += dt;
+  if (!st.man && st.q.length){ st.man = { kind: st.q.shift(), t: 0 }; if (st.man.kind === 'flood') st.ventAge = 0; if (st.man.kind === 'blow') st.blowAge = 0; }
+  const M = st.man;
+  if (M){ busy = true; M.t += dt; const t = M.t, d = DUR[M.kind], u = cl01(t/d), bell = Math.sin(Math.PI*u);
+    st.flowIn = false; st.air = false;
+    if (M.kind === 'flood'){ st.vent = cl01(t/.4)*cl01((d - t)/.4); st.bal = ease(cl01((t - .4)/3.4)); st.flowIn = t > .4 && st.bal < 1;
+      const p = ease(cl01((t - .8)/3.6)); st.zc = Z_SURF + (Z_PERI - Z_SURF)*p; st.th = 3*Math.sin(Math.PI*p); st.pl = 10*Math.sin(Math.PI*p); st.spin = bell; }
+    else if (M.kind === 'down' || M.kind === 'up'){ const g = M.kind === 'down' ? 1 : -1, [z0, z1] = g > 0 ? [Z_PERI, Z_DEEP] : [Z_DEEP, Z_PERI];
+      st.zc = z0 + (z1 - z0)*ease(u); st.th = g*6*bell; st.pl = g*15*Math.sin(Math.PI*Math.min(1, t/(d*.85))); st.spin = Math.max(.35, bell); }
+    else if (M.kind === 'blow'){ st.air = t < 2.8; st.bal = 1 - ease(cl01(t/2.8)); const p = ease(cl01((t - .4)/3.8));
+      st.zc = Z_PERI + (Z_SURF - Z_PERI)*p; st.th = -2.5*Math.sin(Math.PI*p); st.pl = -6*Math.sin(Math.PI*p); st.spin = .5*bell; }
+    else st.peri = M.kind === 'scopeUp' ? ease(u) : 1 - ease(u);
+    if (t >= d){ if (TARGET[M.kind]) st.loc = TARGET[M.kind]; st.man = null; st.th = st.pl = st.spin = st.vent = 0; st.flowIn = st.air = false; }
+  }
+  if (st.ventAge >= 0){ st.ventAge += dt; busy = true; if (st.ventAge > 3.8) st.ventAge = -1; }
+  if (st.blowAge >= 0){ st.blowAge += dt; busy = true; if (st.blowAge > 5) st.blowAge = -1; }
+  st.prop += dt*11*st.spin;
+  return busy;
+}
+function run(){ if (looping || SIM) return; looping = true; ui.animate(dt => { const b = tick(ui.st, Math.min(dt, .05)); if (!b) looping = false; return b; }); }
+// st.pLoc / st.pSc: where the boat will be, and whether the periscope will be up, once the queued steps are done
+function go(st, steps){ for (const k of steps){ st.q.push(k); if (TARGET[k]) st.pLoc = TARGET[k]; if (k === 'scopeUp') st.pSc = true; if (k === 'scopeDown') st.pSc = false; } run(); }
+function dive(st){ if (st.pLoc !== 'surf') return ui.flash('Le sous-marin est déjà en plongée'); go(st, ['flood']); }
+function depth(st){
+  if (st.pLoc === 'deep') return go(st, ['up']);
+  go(st, [...(st.pLoc === 'surf' ? ['flood'] : []), ...(st.pSc ? ['scopeDown'] : []), 'down']);
+}
+function scope(st){ go(st, st.pSc ? ['scopeDown'] : [...(st.pLoc === 'deep' ? ['up'] : []), 'scopeUp']); }
+function surface(st){ if (st.pLoc === 'surf') return ui.flash('Le sous-marin est déjà en surface'); go(st, [...(st.pLoc === 'deep' ? ['up'] : []), 'blow']); }
+const depthM = st => Math.max(0, (ZW - st.zc - SK*HR)/SCM);
+
+ui = mountFigure({
+  fig: '06', turn: 'full', title: 'Sous-marin',
+  size: [DX, DY, ZW + 58], palette: 'mustard',
+  state: { zc: Z_SURF, th: 0, pl: 0, bal: 0, vent: 0, peri: 0, prop: 0, spin: 0, clock: 0, man: null, q: [], loc: 'surf', pLoc: 'surf', pSc: false,
+    ventAge: -1, blowAge: -1, flowIn: false, air: false },
+  scene, ground: st => groundSvg(st),
+  stats: st => [
+    { label: 'Profondeur', value: Math.round(depthM(st)) + ' m' },
+    { label: 'Eau dans les ballasts', value: Math.round(st.bal*100) + ' %' },
+    { label: 'Flottabilité', value: st.bal > .99 ? 'Nulle' : 'Positive', small: true } ],
+  buttons: [
+    { label: 'Plonger', onClick: st => dive(st) },
+    { label: 'Descendre à 20 m', onClick: st => depth(st) },
+    { label: 'Sortir le périscope', onClick: st => scope(st) },
+    { label: 'Faire surface', onClick: st => surface(st) } ],
+  acts: { vents: st => dive(st), planes: st => depth(st), scope: st => scope(st), bottles: st => surface(st), prop: st => depth(st) },
+  params: (st, q) => {
+    const loc = q.get('loc');
+    if (loc){ const z = { surf: Z_SURF, peri: Z_PERI, deep: Z_DEEP }[loc]; if (z != null){ st.zc = z; st.loc = st.pLoc = loc; st.bal = loc === 'surf' ? 0 : 1; } }
+    if (q.has('peri')){ st.peri = +q.get('peri'); st.pSc = st.peri > .5; }
+    for (const k of ['bal', 'th', 'pl', 'vent', 'ventAge', 'blowAge', 'zc', 'prop']) if (q.has(k)) st[k] = +q.get(k);
+    if (q.get('air') === '1') st.air = true; if (q.get('flow') === '1') st.flowIn = true;
+  },
+});
+xrMount(() => ui, () => '');
+// the second and third buttons say what they will do now (down or up, raise or lower)
+(() => { const r0 = ui.render, st = ui.st;
+  ui.render = () => { r0(); const bs = document.querySelectorAll('#btns .act'), set = (b, t) => { if (b && b.textContent !== t) b.textContent = t; };
+    set(bs[1], st.pLoc === 'deep' ? 'Remonter' : 'Descendre à 20 m'); set(bs[2], st.pSc ? 'Rentrer le périscope' : 'Sortir le périscope'); };
+  ui.render();
+})();
+// tests: ?sim=Plonger@0.2,Descendre@6&at=9 presses the buttons at those times (s) in a fast simulation, then draws once;
+// ?shot=1 hides the page around the drawing; ?bench=1 times a redraw
+(() => { const q = new URLSearchParams(location.search), st = ui.st;
+  if (q.has('at')){ const acts = { plonger: dive, descendre: depth, remonter: depth, sortir: scope, rentrer: scope, surface };
+    const ev = (q.get('sim') || '').split(',').filter(Boolean).map(s => { const [w, t] = s.split('@'); return [acts[w.toLowerCase()], +t]; }).sort((a, b) => a[1] - b[1]);
+    SIM = true; let t = 0, i = 0; const end = +q.get('at');
+    while (t < end){ while (i < ev.length && ev[i][1] <= t) ev[i++][0](st); tick(st, 1/60); t += 1/60; }
+    SIM = false; ui.render(); }
+  if (q.get('shot') === '1'){ const cs = document.createElement('style');
+    cs.textContent = '.actions,#stats,.vset,.zchip,body>header,.controls,.made-with,.lgd,.toast{visibility:hidden!important}'; document.head.appendChild(cs); }
+  if (q.get('bench') === '1'){ const t0 = performance.now(); for (let i = 0; i < 5; i++) ui.render(); document.documentElement.dataset.bench = ((performance.now() - t0)/5).toFixed(1); }
+})();
+/* ---------- la page en français ---------- */
+(() => {
+  const tr = { 'Hand-drawn wobble': 'Trait tremblé', 'Colour': 'Couleur', 'View': 'Vue', 'Labels': 'Étiquettes' };
+  document.querySelectorAll('.ctl label').forEach(l => { if (tr[l.textContent]) l.textContent = tr[l.textContent]; });
+  const set = (id, t) => { const e = document.getElementById(id); if (e) e.textContent = t; };
+  set('vreset', 'Vue de face'); set('vspin', 'Faire pivoter'); set('xrb', 'Transparence'); set('lblb', 'Étiquettes');
+  const pn = { mustard: 'moutarde', tomato: 'tomate', mint: 'menthe', cobalt: 'cobalt', blush: 'rose' };
+  document.querySelectorAll('#pals .sw').forEach(b => { if (pn[b.title]) b.title = pn[b.title]; });
+  const mwl = document.querySelector('.made-with a'); if (mwl) mwl.textContent = 'Fait avec Colorfigures';
+  if (/\/figures\/[^/]*$/.test(location.pathname)){
+    const hd = document.querySelector('body > header'); if (hd) hd.insertAdjacentHTML('beforeend', '<span><a href="../" style="color:inherit">← Toutes les figures</a></span>');
+    if (mwl) mwl.insertAdjacentHTML('beforebegin', '<a href="../">← Toutes les figures</a> · '); }
+  addEventListener('load', () => setTimeout(() => {
+    for (const [c, t] of [['.zm', 'Dézoomer'], ['.zp', 'Taille normale'], ['.zi', 'Zoomer']]){ const e = document.querySelector(c); if (e) e.setAttribute('aria-label', t); } }, 0));
+})();
+/* ---------- grand écran et plein écran ---------- */
+(() => {
+  const css = document.createElement('style');
+  css.textContent = `@media (min-width:561px){
+      :root{--figw:max(760px,min(1800px,calc((100vh - 250px)*1.3333)))}
+      body>header,.stage,#fig,.controls,.made-with,.lgd{max-width:var(--figw)!important}
+      html.fs{--figw:min(calc(100vw - 32px),calc((100vh - 24px)*1.3333))}
+      html.fs body{padding-top:10px;padding-bottom:10px}
+      html.fs body>header,html.fs .controls,html.fs .made-with{display:none!important}}
+    @media (min-width:1800px) and (min-height:1050px){.actions,#stats,.vset,.zchip{zoom:1.3}}`;
+  css.textContent += `
+    .zchip .fsb{display:inline-grid;place-items:center}
+    .fsb svg{width:12px;height:12px}`;
+  document.head.appendChild(css);
+  let rt = 0; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => ui.render(), 150); });
+  const root = document.documentElement, enter = root.requestFullscreen || root.webkitRequestFullscreen;
+  if (!enter) return;
+  const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const toggle = () => isFs() ? (document.exitFullscreen || document.webkitExitFullscreen).call(document) : enter.call(root);
+  const icon = out => `<svg viewBox="0 0 16 16" fill="none" stroke="#231e16" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${out
+    ? 'M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5' : 'M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5'}"/></svg>`;
+  let btn = null;
+  const sync = () => { root.classList.toggle('fs', isFs());
+    if (btn){ btn.innerHTML = icon(isFs()); btn.title = isFs() ? 'Quitter le plein écran (F)' : 'Plein écran (F)'; btn.setAttribute('aria-label', btn.title); }
+    dispatchEvent(new Event('resize')); requestAnimationFrame(() => ui.render()); };
+  document.addEventListener('fullscreenchange', sync); document.addEventListener('webkitfullscreenchange', sync);
+  addEventListener('load', () => setTimeout(() => { const chip = document.querySelector('.zchip'); if (!chip) return;
+    btn = document.createElement('button'); btn.type = 'button'; btn.className = 'fsb'; btn.onclick = toggle; chip.prepend(btn); sync(); }, 0));
+  addEventListener('keydown', e => { if (e.key.toLowerCase() !== 'f' || e.metaKey || e.ctrlKey || e.altKey || /input|textarea/i.test(e.target.tagName)) return; e.preventDefault(); toggle(); });
+})();
+</script></body></html>
