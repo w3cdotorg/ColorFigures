@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fusée Ariane 5</title></head><body>
+<script src="core.js"></script>
+<script>
+/* ============================================================
+   Fig. 07 · Fusée Ariane 5 (version ECA) : du pas de tir à l'orbite
+   ------------------------------------------------------------
+   How it really works (one button per step; times from H0, the ignition of the Vulcain 2 engine):
+   The rocket is assembled standing up on its mobile launch table, then rolled on rails to the pad (ELA-3, Kourou).
+   The table carries the umbilical mast; the table sits over three flame trenches (one for the main engine, one per
+   booster); a water tower feeds the deluge that protects the table at lift-off.
+   1. Remplir les réservoirs: in the last hours, liquid oxygen (-183 °C) and liquid hydrogen (-253 °C) flow from the
+      pad through the table (main stage, EPC) and up the mast and its arm (upper stage, ESC-A). Cold gas vents.
+   2. Décoller: H0, the Vulcain 2 starts (water floods the table); after a check, at H0 + 7 s the two solid boosters
+      (EAP) light, the arm swings away and the rocket rises. It soon tilts toward the east (gravity turn). The
+      boosters give 90 % of the thrust; their powder burns from the central channel outward for 2 min 10 s.
+   3. Larguer les boosters: H0 + 2 min 20 s, about 69 km up, the empty boosters are pushed away and fall into the sea.
+   4. Larguer la coiffe: H0 + 3 min 10 s, about 107 km up, there is almost no air left; the fairing splits in two
+      halves and falls away: the satellites are in the open.
+   5. Larguer l'étage principal: the EPC stops at H0 + 9 min (178 km), separates and falls back; the HM7B engine of
+      the upper stage starts and burns for about 16 min, up to the transfer orbit.
+   6. Libérer les satellites: the upper satellite is pushed off its adapter, the Sylda (the hollow structure around
+      the lower satellite) is jettisoned, then the lower satellite is released.
+   Scale: 5 units = 1 m. Liftoff mass ~780 t, height ~52-54 m.
+
+   Parts list:
+   pad:     concrete slab, three flame trenches (carneaux) opening at its edge, rails, the launch table on its
+            bogies with three exhaust holes, the deluge, the umbilical mast (lattice) with its swinging arm and the
+            oxygen and hydrogen lines, the ground connections at the foot of the main stage.
+   rocket:  two solid boosters (nozzle, aft skirt, three segments, nose; inside: powder in three segments around a
+            central channel), their attachments; main stage EPC (Vulcain 2 nozzle, thrust frame skirt, hydrogen tank,
+            oxygen tank, external oxygen line, forward skirt; inside: chamber and two turbopumps, both tanks with their
+            liquid); upper stage ESC-A (HM7B engine, oxygen tank nested under the hydrogen tank), equipment bay (four
+            computer boxes), fairing (two halves), Sylda with the lower satellite, adapter, upper satellite (solar
+            panels folded, antenna).
+   ============================================================ */
+
+/* ---------- dimensions: 5 units = 1 m ---------- */
+const MU = 5;
+const DX = 180, DY = 190, ZG = 14;                          // the concrete pad (x across, y along) and its top
+const XC = 104, YC = 95, ZT = ZG + 22;                      // the rocket's axis on the table; top of the launch table
+const TB = [XC - 60, XC + 44, YC - 62, YC + 62];            // the table: x0, x1, y0, y1 (21 m x 25 m)
+const MST = [XC - 56, XC - 42, YC - 7, YC + 7], MST_TOP = ZT + 270;   // the umbilical mast, on the table
+const R0 = 13.5, RB = 7.5, BY = 22.5, ARM_S = 166;          // core and booster radii, booster axes, where the arm plugs in
+const TRENCH = [[YC - 33, YC - 13], [YC - 9, YC + 9], [YC + 13, YC + 33]], TR_X0 = XC - 14, TR_Z = 3;
+const HOLES = [[0, 8.5], [-BY, 10], [BY, 10]];              // exhaust holes in the table: y offset, radius
+const WHITE = { l: '#fbfaf5', m: '#e3e0d6', d: '#b7b2a5' }, GREYM = matOf('#b3b7ba'), CHAR = matOf('#56575c'), NOZM = matOf('#a08a78');
+const BNOZ = matOf('#6f6a64'), CONC = matOf('#dcd6c8'), TABLEM = matOf('#bfc2c4'), TANKM = matOf('#e9eef1'), SYLM = matOf('#d9dcde');
+const GOLD = matOf('#e0ae4e'), SILV = matOf('#cfd3d8'), PANEL = matOf('#3a5688'), MASTC = '#c8cdd0';
+const LOXC = '#78aee6', LH2C = '#c4b2ee', GRAIN = matOf('#cdb68e');
+// profiles [s, r]: s = height along the rocket above the table top, r = radius
+const VULC = [[4, 5.3], [8, 4.7], [12, 3.9], [16, 3.1], [19.5, 2.4], [22, 2.4]];
+const CORE_LOW = [['aft', [[22, 12.4], [32, R0]], CHAR], ['lh2', [[32, R0], [124, R0]], WHITE], ['band', [[124, R0], [130, R0]], null],
+  ['lox', [[130, R0], [148, R0]], WHITE], ['fwd', [[148, R0], [156, R0]], GREYM]];
+const LOXLINE = [[30.5, .4], [31.6, 1.5], [128, 1.5], [129.2, .4]];
+const ESC = [[156, R0], [176, R0]], VEB = [[176, R0], [182, R0]];
+const FAIR = [[182, R0], [226, R0], [234, 12.8], [241, 11.4], [247, 9.4], [252, 6.8], [255.5, 4], [257.5, 1.8], [258.3, .4]];
+const HM7 = [[148, 3.1], [151, 2.5], [154, 1.8], [156.5, 1.3], [159.5, 1.5]];
+const BOOST = [['nozzle', [[-10, 7], [-6, 6.2], [-2.5, 5.2], [0, 4.6]], BNOZ], ['skirt', [[0, 8.4], [3, 8.2], [12, RB]], GREYM],
+  ['body', [[12, RB], [116, RB]], WHITE], ['band', [[116, RB], [122, RB]], null], ['top', [[122, RB], [136, RB]], WHITE],
+  ['nose', [[136, RB], [142, 7], [147, 5.7], [151, 3.7], [153.6, 1.6], [154.4, .3]], WHITE]];
+const EPC_LH2 = [[33.5, 4.5], [35, 8.5], [37.5, 11.2], [41, 12.5], [109, 12.5], [111.5, 11], [113, 8], [114, 4]];
+const EPC_LOX = [[115.5, 4.5], [117, 8.5], [119.5, 11.2], [123, 12.5], [140, 12.5], [143, 11], [145.5, 8], [147, 4]];
+const ESC_LOX = [[159.5, 2.2], [161, 4.6], [163.5, 6.2], [165.5, 5.2], [167.5, 2.6]];
+const ESC_LH2 = [[164, 5.8], [165.5, 9.5], [168, 12.4], [173, 12.4], [175, 9.5], [176, 5.5]];
+const SYL = [[183, 11.5], [207, 11.5], [212, 8.6], [213, 8.6]], ADAPT = [[213, 8.2], [216, 5.2]], ADAPT_LOW = [[182.2, 6.4], [185.5, 4.8]];
+const cl01 = v => Math.max(0, Math.min(1, v));
+const lerp = (a, b, t) => a + (b - a)*t;
+const interp = (tab, x) => { if (x <= tab[0][0]) return tab[0][1];
+  for (let i = 1; i < tab.length; i++) if (x <= tab[i][0]){ const [x0, y0] = tab[i - 1], [x1, y1] = tab[i]; return y0 + (y1 - y0)*(x - x0)/(x1 - x0); }
+  return tab[tab.length - 1][1]; };
+let CLOCK = 0, CUTLO = -1e9;                                // animation clock; nothing below CUTLO is drawn (the table top)
+
+/* ---------- frames: the rocket's own axes ---------- */
+// a frame: origin o, unit axes X, Y (across) and A (along the rocket, toward the nose), scale k
+const FW = (F, lx, ly, s) => [0, 1, 2].map(i => F.o[i] + F.k*(lx*F.X[i] + ly*F.Y[i] + s*F.A[i]));
+const ringF = (F, s, r, n = 24, cx = 0, cy = 0) => Array.from({ length: n }, (_, i) => { const a = i/n*2*Math.PI; return FW(F, cx + r*Math.cos(a), cy + r*Math.sin(a), s); });
+// a part that comes away from the frame: turned by ang (deg) about the frame's X or Y axis through pivot, then shifted by d
+function moved(F, pivot, d, ax, ang){
+  const t = ang*Math.PI/180, c = Math.cos(t), sn = Math.sin(t), lin = (u, a, v, b) => u.map((x, i) => a*x + b*v[i]);
+  let X = F.X, Y = F.Y, A = F.A;
+  if (ax === 'X'){ Y = lin(F.Y, c, F.A, sn); A = lin(F.A, c, F.Y, -sn); } else { X = lin(F.X, c, F.A, sn); A = lin(F.A, c, F.X, -sn); }
+  const pw = FW(F, pivot[0] + d[0], pivot[1] + d[1], pivot[2] + d[2]);
+  return { o: pw.map((v, i) => v - F.k*(pivot[0]*X[i] + pivot[1]*Y[i] + pivot[2]*A[i])), X, Y, A, k: F.k };
+}
+// the rocket on the table, or in flight (tilted by th, pinned in the frame, zoomed in on the upper stage at the end)
+function rocketFrame(st){ const t = st.th*Math.PI/180, c = Math.cos(t), s = Math.sin(t), A = [0, -s, c], z = 80*(st.zm - 1), pv = [XC, YC - z*A[1], ZT + 130 + st.lift - z*A[2]];   // zoomed in, the upper stage moves back along its axis, toward the lower left
+  return { o: pv.map((v, i) => v - st.zm*st.sp*A[i]), X: [1, 0, 0], Y: [0, c, s], A, k: st.zm }; }
+const upF = F => dot(F.A, CAM_V) > 0;                       // seen from the nose side: the lower parts go first
+const axial = (F, items) => (upF(F) ? items : items.slice().reverse()).join('');
+
+/* ---------- convex solids ---------- */
+function clipZ(poly, c){ const out = [], n = poly.length;
+  for (let i = 0; i < n; i++){ const p = poly[i], q = poly[(i + 1) % n], ip = p[2] >= c, iq = q[2] >= c;
+    if (ip) out.push(p);
+    if (ip !== iq){ const t = (c - p[2])/(q[2] - p[2]); out.push([p[0] + t*(q[0] - p[0]), p[1] + t*(q[1] - p[1]), c]); } }
+  return out; }
+const newell = q => { const n = [0, 0, 0];
+  for (let i = 0; i < q.length; i++){ const a = q[i], b = q[(i + 1) % q.length]; n[0] += (a[1] - b[1])*(a[2] + b[2]); n[1] += (a[2] - b[2])*(a[0] + b[0]); n[2] += (a[0] - b[0])*(a[1] + b[1]); }
+  const l = Math.hypot(...n); return l > 1e-9 ? n.map(v => v/l) : null; };
+// a convex solid lofted through rings (closed, equal length), the end rings as caps, cut at CUTLO.
+// o: { w: silhouette ink, noInk, out: collects the outline points }
+function solid(rings, shade, o = {}){
+  let zmax = -1e9; for (const r of rings) for (const p of r) if (p[2] > zmax) zmax = p[2];
+  if (zmax <= CUTLO) return '';
+  const faces = [], cen = avg(rings.flat());
+  for (let r = 0; r < rings.length - 1; r++){ const A = rings[r], B = rings[r + 1], n = A.length;
+    for (let i = 0; i < n; i++) faces.push([A[i], A[(i + 1) % n], B[(i + 1) % n], B[i]]); }
+  faces.push(rings[0], rings[rings.length - 1]);
+  let s = ''; const pts = [];
+  for (const q of faces){
+    let nr = newell(q); if (!nr) continue;
+    if (dot(nr, sub(avg(q), cen)) < 0) nr = nr.map(v => -v);
+    const c = CUTLO > -1e8 ? clipZ(q, CUTLO) : q; if (c.length < 3) continue;
+    for (const p of c) pts.push(p);
+    if (vis(nr)) s += face(pd(c), shade(nr));
+  }
+  if (o.out) for (const p of pts) o.out.push(p);
+  if (!o.noInk && pts.length) s += hullInk(pts, o.w ?? 1.1);
+  return s;
+}
+const prof = (F, pr, n = 24, cx = 0, cy = 0) => pr.map(([s, r]) => ringF(F, s, Math.max(r, .05), n, cx, cy));
+const ext = m => n => tone(n, m);
+const nozShade = (F, m) => n => dot(n, F.A) < -.95 ? '#2b2522' : tone(n, m);     // the open end of a nozzle is dark
+const rectRing = (F, s, hx, hy, cx, cy) => [FW(F, cx - hx, cy - hy, s), FW(F, cx + hx, cy - hy, s), FW(F, cx + hx, cy + hy, s), FW(F, cx - hx, cy + hy, s)];
+const blockF = (F, s0, s1, hx, hy, shade, cx = 0, cy = 0, w = .9) => solid([rectRing(F, s0, hx, hy, cx, cy), rectRing(F, s1, hx, hy, cx, cy)], shade, { w });
+// the near half of a ring round the rocket (a joint between two segments)
+function ringInk(F, s, r, cx = 0, cy = 0, w = .7){
+  const n = 32, pts = [], vs = [];
+  for (let i = 0; i < n; i++){ const a = i/n*2*Math.PI, c = Math.cos(a), sn = Math.sin(a); pts.push(FW(F, cx + r*c, cy + r*sn, s)); vs.push(vis(F.X.map((v, j) => c*v + sn*F.Y[j]))); }
+  const i0 = vs.findIndex((v, i) => v && !vs[(i + n - 1) % n]); if (i0 < 0) return '';
+  const run = []; for (let i = 0; i < n && vs[(i0 + i) % n]; i++) run.push(pts[(i0 + i) % n]);
+  return run.length > 1 ? line(run, w) : '';
+}
+// a pipe drawn as two strokes (ink, then colour); flow: white dashes running along it
+function tube(pts, r, col, flow = false){ const d = 'M' + pts.map(p => { const q = P(...p); return f(q[0]) + ' ' + f(q[1]); }).join('L'), w = 2*r*CAM_K;
+  return `<path d="${d}" fill="none" stroke="${INK}" style="stroke-width:${f(w + 1.6*INK_K)}" stroke-linecap="round" stroke-linejoin="round"/>`
+    + `<path d="${d}" fill="none" stroke="${col}" style="stroke-width:${f(w)}" stroke-linecap="round" stroke-linejoin="round"/>`
+    + (flow ? `<path d="${d}" fill="none" stroke="#fff" style="stroke-width:${f(w*.45)}" stroke-dasharray="${f(3*INK_K)} ${f(5*INK_K)}" stroke-dashoffset="${f(-CLOCK*30*INK_K)}" stroke-linecap="round"/>` : ''); }
+// see-through: the case as a ghost, the parts inside over it
+const ghost = (shell, inside, k) => k > 0 ? `<g opacity="${f(1 - .8*k)}">${shell}</g><g opacity="${f(k)}">${inside}</g>` : shell;
+// a cryogenic tank: pale shell, the liquid up to its level (the level stays square to the rocket: thrust presses it down)
+function tankSvg(F, pr, lvl, col){
+  const pts = [], s0 = pr[0][0], s1 = pr[pr.length - 1][0], sl = s0 + (s1 - s0)*cl01(lvl);
+  let s = `<g opacity=".55">${solid(prof(F, pr, 20), n => toneI(n, TANKM), { noInk: true, out: pts })}</g>`;
+  if (lvl > .01){ const lp = pr.filter(p => p[0] < sl).concat([[sl, interp(pr, sl)]]); s += solid(prof(F, lp, 20), n => toneI(n, matOf(col)), { w: .6 }); }
+  return s + (pts.length ? hullInk(pts, 1) : '');
+}
+
+/* ---------- flames and smoke ---------- */
+function flame(F, s0, r0, len, cols, cy = 0){
+  if (len < 1) return '';
+  let out = '';
+  [[1, .9], [.62, .95], [.3, 1]].forEach(([w, op], i) => {
+    const Lf = len*(1 - .2*i)*(1 + .06*Math.sin(CLOCK*43 + i*2 + cy)), rings = [0, .12, .35, .65, 1].map(t => ringF(F, s0 - t*Lf, r0*w*(1 + .45*Math.sin(Math.PI*Math.min(1, t*1.4)))*(1 - .85*t*t) + .05, 14, 0, cy));
+    out += `<g opacity="${op}">${solid(rings, () => cols[i], { noInk: true })}</g>`;
+  });
+  return out;
+}
+const trailSvg = (F, s0, r0, op, cy) => op < .02 ? '' : `<g opacity="${f(op)}">${solid([[0, 1.1], [.12, 2], [.4, 3.4], [1, 6.5]].map(([t, k2]) => ringF(F, s0 - t*900, r0*k2, 14, 0, cy)), () => '#f1ede4', { w: .9 })}</g>`;
+
+/* ---------- the boosters (EAP) ---------- */
+function boosterSvg(st, Fb, side, pal, k, isNear){
+  const cy = side*BY;
+  let shell = axial(Fb, BOOST.map(([nm, pr, m]) => solid(prof(Fb, pr, 24, 0, cy), nm === 'nozzle' ? nozShade(Fb, m) : ext(m || pal), { w: nm === 'body' ? 2 : 1.3 })));
+  shell += ringInk(Fb, 54, RB, 0, cy) + ringInk(Fb, 96, RB, 0, cy);
+  let ins = '';
+  if (k > 0){   // the powder, in three segments, burns from the central channel outward
+    const rb = 1.6 + 5.4*st.eb, hot = st.eapOn > .05 && st.eb < 1;
+    ins = axial(Fb, [[13, 53], [55, 95], [97, 134]].map(([a, b]) => (st.eb < .99 ? solid(prof(Fb, [[a, 7], [b, 7]], 20, 0, cy), n => toneI(n, GRAIN), { w: .7 }) : '')
+      + solid(prof(Fb, [[a, rb], [b, rb]], 16, 0, cy), n => toneI(n, hot ? matOf('#ff9a45') : matOf('#5b4c3f')), { w: .6 }))) + solid(prof(Fb, [[134, 1.6], [137, 1.6]], 10, 0, cy), n => toneI(n, CHAR), { w: .6 });
+  }
+  let body = act('eap', ghost(shell, ins, k));
+  if (st.eapOn > .02){ const fl = trailSvg(Fb, -60, 7, .92*st.eapOn*(1 - .7*cl01((st.alt - 30)/30)), cy) + flame(Fb, -10, 6.8, 78*st.eapOn, ['#ff8a2e', '#ffc94a', '#fff4cf'], cy);
+    body = upF(Fb) ? fl + body : body + fl; }
+  if (st.eapS === 0){   // attachments to the main stage: two struts at the back, one beam at the front
+    const y0 = side*(BY - RB + .2), y1 = side*(R0 - .2);
+    const struts = [-3, 3].map(lx => rod(FW(Fb, lx, y0, 24), FW(Fb, lx, y1, 24), .8, GREYM, tone, .8)).join('') + rod(FW(Fb, 0, y0, 130), FW(Fb, 0, y1, 130), 1.4, GREYM, tone, .9);
+    body = isNear ? struts + body : body + struts; }
+  return body;
+}
+
+/* ---------- the main stage (EPC) ---------- */
+function epcSvg(st, F, pal, k){
+  let shell = axial(F, [solid(prof(F, VULC), nozShade(F, NOZM), { w: 1.2 }), ...CORE_LOW.map(([nm, pr, m]) => solid(prof(F, pr), ext(m || pal), { w: 2.4 }))]);
+  const loxL = solid(prof(F, LOXLINE, 12, R0 + 1.7, 0), ext(GREYM), { w: .9 });
+  shell = vis(F.X) ? shell + loxL : loxL + shell;
+  let ins = '';
+  if (k > 0){ const lvl = st.fe*(1 - cl01(st.T/540));
+    const eng = solid(prof(F, [[21, 2.6], [24, 3.2], [28, 3.2], [31, 2.4]], 16), n => toneI(n, NOZM), { w: .8 })
+      + [[6, LOXC], [-6, LH2C]].map(([lx, c]) => solid(prof(F, [[24, 1.9], [31, 1.9]], 12, lx, 0), n => toneI(n, matOf(c)), { w: .7 })).join('')
+      + tube([FW(F, R0 + 1.7, 0, 31.5), FW(F, 6, 0, 31.5)], .8, LOXC) + tube([FW(F, 0, 0, 33.5), FW(F, -6, 0, 31.5)], .8, LH2C);
+    ins = axial(F, [eng, tankSvg(F, EPC_LH2, lvl, LH2C), tankSvg(F, EPC_LOX, lvl, LOXC)]); }
+  let body = act('vulcain', ghost(shell, ins, k));
+  if (st.vul > .02){ const fl = `<g opacity=".85">${flame(F, 4, 5, 58*st.vul, ['#a6caff', '#dcebff', '#ffffff'])}</g>`; body = upF(F) ? fl + body : body + fl; }
+  return body;
+}
+
+/* ---------- the upper stage, the fairing and the satellites ---------- */
+function satSvg(F, s0, s1, hx, hy, mat, dS, dR){
+  const body = blockF(F, s0, s1, hx, hy, ext(mat), 0, 0, 1.3);
+  const pan = sd => blockF(F, s0 + 1.5, s1 - 1.5, hx - 1.6, .4, ext(PANEL), 0, sd*(hy + .45), .8);
+  const dp = Array.from({ length: 16 }, (_, i) => { const a = i/16*2*Math.PI; return FW(F, hx + .5, dR*Math.cos(a), dS + dR*Math.sin(a)); });
+  const dish = fill(pd(dp), '#f4f1e8') + ink(pd(dp), .9) + line([FW(F, hx + .5, 0, dS), FW(F, hx + 2.8, 0, dS)], .8);
+  const nY = vis(F.Y) ? 1 : -1, dX = vis(F.X);
+  return pan(-nY) + (dX ? '' : dish) + body + pan(nY) + (dX ? dish : '');
+}
+function payloadSvg(st, fr, k){
+  const { F, F1, Fs, F2 } = fr, low = k > 0 || st.satS > .3;
+  const syl = solid(prof(Fs, SYL), ext(SYLM), { w: 1.4 }) + solid(prof(Fs, ADAPT), ext(GREYM), { w: 1 });
+  const lower = low ? solid(prof(F, ADAPT_LOW, 16), ext(GREYM), { w: .9 }) + satSvg(F2, 185.5, 205, 6.5, 6, SILV, 199, 3.4) : '';
+  return axial(F, [lower + (k > 0 ? `<g opacity="${f(1 - .7*k)}">${syl}</g>` : syl), satSvg(F1, 216, 238, 8, 7, GOLD, 230, 4.6)]);
+}
+// one half of the fairing (side +1: the +X half), a shell: the inside first, then the outside
+function halfShell(F, pr, side){
+  const n = 12, arc = (r, s) => Array.from({ length: n + 1 }, (_, i) => { const a = (-90 + 180*i/n)*Math.PI/180; return FW(F, side*r*Math.cos(a), r*Math.sin(a), s); });
+  const out = pr.map(([s, r]) => arc(r, s)), inn = pr.map(([s, r]) => arc(Math.max(.05, r - .7), s));
+  let si = '', so = ''; const pts = [];
+  for (let j = 0; j < pr.length - 1; j++) for (let i = 0; i < n; i++){
+    const qo = [out[j][i], out[j][i + 1], out[j + 1][i + 1], out[j + 1][i]], qi = [inn[j][i], inn[j][i + 1], inn[j + 1][i + 1], inn[j + 1][i]];
+    const a = (-90 + 180*(i + .5)/n)*Math.PI/180, rd = F.X.map((v, m) => side*Math.cos(a)*v + Math.sin(a)*F.Y[m]);
+    let no = newell(qo); if (!no) continue; if (dot(no, rd) < 0) no = no.map(v => -v);
+    if (vis(no)) so += face(pd(qo), tone(no, WHITE));
+    const ni = no.map(v => -v); if (vis(ni)) si += face(pd(qi), mix(toneI(ni, WHITE), '#8c8678', .25));
+    pts.push(...qo);
+  }
+  return si + so + line(out.map(r => r[0]), .8) + line(out.map(r => r[n]), .8) + hullInk(pts, 1.8);
+}
+function upperSvg(st, fr, pal, k){
+  const { F } = fr, g = st.epcS, q = st.fairS, lvl = st.fs*(1 - cl01((st.T - 545)/945));
+  let shell = axial(F, [g > 0 ? solid(prof(F, HM7), nozShade(F, NOZM), { w: 1 }) : '', solid(prof(F, ESC), ext(CHAR), { w: 2.2 }), solid(prof(F, VEB), ext(GREYM), { w: 1.6 })]), ins = '';
+  if (k > 0){ const boxes = [[7, 7], [-7, 7], [7, -7], [-7, -7]].map(([cx, cy]) => ({ d: depthOf(FW(F, cx, cy, 179)), svg: blockF(F, 177, 181, 2.2, 2.2, n => toneI(n, CHAR), cx, cy, .7) })).sort((a, b) => a.d - b.d).map(b => b.svg).join('');
+    ins = axial(F, [g > 0 ? '' : solid(prof(F, HM7), n => toneI(n, NOZM), { w: .8 }), tankSvg(F, ESC_LOX, lvl, LOXC), tankSvg(F, ESC_LH2, lvl, LH2C), boxes]); }
+  const low = ghost(shell, ins, k);
+  let top;
+  if (q === 0) top = act('coiffe', ghost(solid(prof(F, FAIR), ext(WHITE), { w: 2.4 }), payloadSvg(st, fr, 1), k));
+  else { const pay = payloadSvg(st, fr, k), nX = dot(F.X, CAM_V) > 0 ? 1 : -1;
+    const op = `<g opacity="${f(1 - cl01((q - .45)/.5))}">`;
+    top = q >= 1 ? pay : op + halfShell(fr.Fh(-nX), FAIR, -nX) + '</g>' + pay + op + halfShell(fr.Fh(nX), FAIR, nX) + '</g>'; }
+  let body = upF(F) ? low + top : top + low;
+  if (st.hm7 > .02){ const fl = `<g opacity=".8">${flame(F, 148, 2.9, 34*st.hm7, ['#a9cfff', '#e1efff', '#ffffff'])}</g>`; body = upF(F) ? fl + body : body + fl; }
+  return body;
+}
+
+/* ---------- the whole rocket, and the parts coming away from it ---------- */
+function frames(st){
+  const F = rocketFrame(st), e = st.eapS, q = st.fairS, g = st.epcS, sv = st.satS;
+  const a = cl01(sv/.55), b = cl01((sv - .3)/.55), c = cl01((sv - .55)/.45), eo = t => 1 - (1 - t)*(1 - t);
+  return { F,
+    Fb: side => moved(F, [0, side*BY, 70], [0, side*(70*e*e), -(560*e*e*e + 30*e)], 'X', -side*34*e),
+    Fh: side => moved(F, [side*R0, 0, 182], [side*(2 + 60*q*q), 0, -160*q*q], 'Y', -side*58*q),
+    Fe: moved(F, [0, 0, 90], [0, 6*g, -(280*g*g + 12*g)], 'X', 14*g),
+    F1: moved(F, [0, 0, 227], [3*eo(a), 0, 24*eo(a)], 'X', 16*a),
+    Fs: moved(F, [0, 0, 198], [-30*eo(b), 0, 30*eo(b)], 'Y', 34*b),
+    F2: moved(F, [0, 0, 195], [4*eo(c), 6*eo(c), 22*eo(c)], 'X', -12*c) };
+}
+function rocketSvg(st, fr, pal, k){
+  const { F, Fb, Fe } = fr, near = dot(F.Y, CAM_V) > 0 ? 1 : -1;
+  // what falls away fades out before it leaves the frame
+  const fade = (svg, t) => t > 0 ? `<g opacity="${f(1 - cl01((t - .35)/.5))}">${svg}</g>` : svg;
+  const lower = st.epcS < 1 ? fade(epcSvg(st, Fe, pal, k), st.epcS) : '', upper = upperSvg(st, fr, pal, k);
+  const core = upF(F) ? lower + upper : upper + lower;
+  if (st.eapS >= 1) return core;
+  return fade(boosterSvg(st, Fb(-near), -near, pal, k, false), st.eapS) + core + fade(boosterSvg(st, Fb(near), near, pal, k, true), st.eapS);
+}
+function lcCallouts(items){
+  if (!items.length || !labelsShown()) return '';
+  const svgEl = document.getElementById('fig'), vb = svgEl.viewBox.baseVal, ctm = svgEl.getScreenCTM();
+  const k = INK_K*Math.min(1, Math.pow(760/(svgEl.clientWidth || 760), .75)), u = window.LBL_U ? LBL_U() : 0, fs = u ? 10*u : 8.6*k, hgt = u ? 17*u : fs*1.8, gap = hgt + (u ? 3*u : 3*k);
+  const below = id => { const el = document.getElementById(id); if (!el || !ctm || u) return -1e9;
+    const r = el.getBoundingClientRect(); return new DOMPoint(r.left, r.bottom + 10).matrixTransform(ctm.inverse()).y + hgt/2; };
+  const pts = items.map(it => { const [X, Y] = P(...it.at); return { ...it, X, Y }; }).sort((a, b) => a.X - b.X), half = Math.ceil(pts.length/2);
+  let s = '';
+  for (const [col, side, top] of [[pts.slice(0, half), -1, below('btns')], [pts.slice(half), 1, Math.max(below('stats'), below('xrb'))]]){
+    const t0 = Math.max(vb.y + hgt, top);
+    col.sort((a, b) => a.Y - b.Y);
+    let y = -1e9; for (const c of col){ c.py = Math.max(c.Y, y + gap, t0); y = c.py; }
+    const over = col.length ? col[col.length - 1].py - (vb.y + vb.height - hgt) : 0;
+    if (over > 0){ const room = col[0].py - t0; for (const c of col) c.py -= Math.min(over, room); }
+    for (const c of col){
+      c.n = ((window.__ln || (window.__ln = {}))[c.text] || (__ln[c.text] = Object.keys(__ln).length + 1));
+      const w = u ? hgt*(c.n > 9 ? 1.3 : 1) : c.text.length*fs*.62 + fs*1.5;
+      const px = side < 0 ? vb.x + 3*k + w/2 : vb.x + vb.width - 3*k - w/2, ex = px - side*w/2;
+      s += `<g class="tag${c.on ? ' on' : ''}" data-n="${c.n}" data-t="${c.text}"><path d="M${f(c.X)} ${f(c.Y)}L${f(ex - side*4*k)} ${f(c.py)}L${f(ex)} ${f(c.py)}" fill="none" stroke="${INK}" stroke-width="1"/>`
+        + `<circle cx="${f(c.X)}" cy="${f(c.Y)}" r="${f(1.4*k)}" fill="${INK}"/>`
+        + `<rect x="${f(px - w/2)}" y="${f(c.py - hgt/2)}" width="${f(w)}" height="${f(hgt)}" rx="${f(hgt/2)}" fill="${c.on ? 'var(--accent,#f4b829)' : '#fff4d6'}" stroke="${INK}" stroke-width="1.2"/>`
+        + `<text x="${f(px)}" y="${f(c.py + fs*.36)}" font-size="${f(fs)}" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-weight="800" letter-spacing=".04em" fill="${INK}">${u ? c.n : c.text}</text></g>`; } }
+  return s;
+}
+
+/* ---------- the pad: slab, trenches, rails, table ---------- */
+const slabTop = () => on(PZ(ZG), rectUV(0, 0, DX, DY)), tableTop = () => on(PZ(ZT), rectUV(TB[0], TB[2], TB[1], TB[3]));
+function padSvg(st, fr, pal){
+  const nx = vis([1, 0, 0]), ny = vis([0, 1, 0]), cz = st.cz;
+  let s = '';
+  // the three flame trenches, seen through their openings beyond the table
+  for (const [y0, y1] of TRENCH){
+    s += face(pd([[TR_X0, y0, TR_Z], [DX, y0, TR_Z], [DX, y1, TR_Z], [TR_X0, y1, TR_Z]]), '#7a746b');
+    for (let i = 0; i < 3; i++){ const y = lerp(y0 + 4, y1 - 4, i/2); s += line([[TB[1] + 4, y, TR_Z], [DX - 3, y + 1.5, TR_Z]], .5); }
+    s += ny ? face(pd([[TR_X0, y0, TR_Z], [DX, y0, TR_Z], [DX, y0, ZG], [TR_X0, y0, ZG]]), toneI([0, 1, 0], CONC))
+            : face(pd([[TR_X0, y1, TR_Z], [DX, y1, TR_Z], [DX, y1, ZG], [TR_X0, y1, ZG]]), toneI([0, -1, 0], CONC)); }
+  // the slab: its sides (notched where the trenches come out) and its top between the trenches
+  const ys = [0, ...TRENCH.flat(), DY], cs = tone([1, 0, 0], CONC), cn = tone([-1, 0, 0], CONC);
+  if (nx){ s += face(pd([[DX, 0, 0], [DX, DY, 0], [DX, DY, TR_Z], [DX, 0, TR_Z]]), cs);
+    for (let i = 0; i < ys.length; i += 2) s += face(pd([[DX, ys[i], TR_Z], [DX, ys[i + 1], TR_Z], [DX, ys[i + 1], ZG], [DX, ys[i], ZG]]), cs); }
+  else s += face(pd([[0, 0, 0], [0, DY, 0], [0, DY, ZG], [0, 0, ZG]]), cn);
+  s += ny ? face(pd([[0, DY, 0], [DX, DY, 0], [DX, DY, ZG], [0, DY, ZG]]), tone([0, 1, 0], CONC)) : face(pd([[0, 0, 0], [DX, 0, 0], [DX, 0, ZG], [0, 0, ZG]]), tone([0, -1, 0], CONC));
+  s += face(pd([[0, 0, ZG], [TR_X0, 0, ZG], [TR_X0, DY, ZG], [0, DY, ZG]]), CONC.l);
+  for (let i = 0; i < ys.length; i += 2) s += face(pd([[TR_X0, ys[i], ZG], [DX, ys[i], ZG], [DX, ys[i + 1], ZG], [TR_X0, ys[i + 1], ZG]]), CONC.l);
+  for (const [y0, y1] of TRENCH) s += line([[TB[1], y0, ZG], [DX, y0, ZG]], 1.1) + line([[TB[1], y1, ZG], [DX, y1, ZG]], 1.1) + (nx ? line([[DX, y0, ZG], [DX, y0, TR_Z], [DX, y1, TR_Z], [DX, y1, ZG]], 1.1) : '');
+  s += ink(pd(slabTop()), 1.2) + hullInk([[0, 0, 0], [DX, 0, 0], [DX, DY, 0], [0, DY, 0], ...slabTop()], 2.2);
+  // the rails the table rolled in on
+  for (const yr of [YC - 50, YC + 50]){
+    for (let x = 3; x < TB[0]; x += 7) s += line([[x, yr - 3.8, ZG + .2], [x, yr + 3.8, ZG + .2]], .6);
+    for (const d of [-2.2, 2.2]) s += line([[0, yr + d, ZG + .5], [TB[0], yr + d, ZG + .5]], 1.1); }
+  // shadows: the rocket (while it is near) and the mast, on the slab
+  const sp = shadowPts(st, fr), mp = []; for (const x of [MST[0], MST[1]]) for (const y of [MST[2], MST[3]]) for (const z of [ZT, MST_TOP]) mp.push([x, y, z]);
+  const so = 1 - cl01(cz/160);
+  s += `<g opacity=".45">${castShadow(mp, ZG, slabTop())}</g>` + (sp && so > 0 ? `<g opacity="${f(so)}">${castShadow(sp, ZG, slabTop())}</g>` : '');
+  // the table on its four bogies, with its three exhaust holes
+  for (const x of [TB[0] + 6, TB[1] - 20]) for (const yr of [YC - 50, YC + 50]) s += box(x, yr - 4, ZG, x + 14, yr + 4, ZG + 5, CHAR, tone, .8);
+  s += box(TB[0], TB[2], ZG + 5, TB[1], TB[3], ZT, TABLEM, tone, 1.4);
+  s += line([[TB[0], TB[2] + 6, ZT], [TB[1], TB[2] + 6, ZT]], .5) + line([[TB[0], TB[3] - 6, ZT], [TB[1], TB[3] - 6, ZT]], .5);
+  for (const [dy, r] of HOLES){ const hot = st.lift < 30 ? (dy ? st.eapOn : st.vul) : 0, ring = on(PZ(ZT + .05), ellUV(XC, YC + dy, r, r, 24));
+    s += fill(pd(ring), mix('#2a2622', '#ff9a3c', .85*hot)) + ink(pd(ring), 1); }
+  s += `<g opacity=".45">${castShadow(mp, ZT, tableTop())}</g>` + (sp && so > 0 ? `<g opacity="${f(so)}">${castShadow(sp, ZT, tableTop())}</g>` : '');
+  if (st.wet > .02) s += deluge(st);
+  return s;
+}
+// the rocket's outline points, back in the pad's coordinates
+function shadowPts(st, fr){
+  if (st.cz > 200) return null;
+  const { F, Fb } = fr, pts = [...ringF(F, 4, 5, 8), ...ringF(F, 150, R0, 8), FW(F, 0, 0, 258)];
+  for (const sd of [-1, 1]) pts.push(...ringF(Fb(sd), 0, RB, 8, 0, sd*BY), ...ringF(Fb(sd), 150, 4, 8, 0, sd*BY));
+  return pts.map(p => [p[0], p[1], p[2] + st.cz]);
+}
+// the deluge: water sprayed over the table round the holes, against the heat and the noise
+function deluge(st){
+  let s = '';
+  for (const [dy, r] of HOLES) for (let i = 0; i < 10; i++){ const a = i/10*2*Math.PI + .3, c = Math.cos(a), sn = Math.sin(a), h = 5 + 2*Math.sin(CLOCK*9 + i);
+    const pts = [0, .25, .5, .75, 1].map(t => [XC + c*(r + 7 - 6*t), YC + dy + sn*(r + 7 - 6*t), ZT + .3 + 4*h*t*(1 - t)]);
+    s += `<path d="${pd(pts, false)}" fill="none" stroke="#9fd2f2" stroke-width="1.6" stroke-linecap="round" opacity="${f(.9*st.wet)}"/>`
+      + `<path d="${pd(pts, false)}" fill="none" stroke="#ffffff" stroke-width=".6" stroke-linecap="round" opacity="${f(.9*st.wet)}"/>`; }
+  return s;
+}
+
+/* ---------- the umbilical mast and its arm ---------- */
+function mastSvg(st, pal){
+  const [x0, x1, y0, y1] = MST, lv = [];
+  for (let z = ZT; z < MST_TOP - 6; z += 18) lv.push(z); lv.push(MST_TOP);
+  const cs = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  let br = '';
+  for (let i = 0; i < 4; i++){ const [ax, ay] = cs[i], [bx, by] = cs[(i + 1) % 4];
+    for (let j = 0; j < lv.length - 1; j++) br += line([[ax, ay, lv[j]], [bx, by, lv[j + 1]]], .45) + line([[bx, by, lv[j]], [ax, ay, lv[j + 1]]], .45); }
+  for (const z of lv) br += ink(pd(cs.map(([x, y]) => [x, y, z])), .7);
+  const posts = cs.map(([x, y]) => ({ d: depthOf([x, y, 0]), svg: tube([[x, y, ZT], [x, y, MST_TOP]], .9, MASTC) })).sort((a, b) => a.d - b.d);
+  let m = posts[0].svg + posts[1].svg + br + posts[2].svg + posts[3].svg;
+  m += box(x0 - 2, y0 - 2, MST_TOP, x1 + 2, y1 + 2, MST_TOP + 2, GREYM, tone, .9) + line([[(x0 + x1)/2, YC, MST_TOP + 2], [(x0 + x1)/2, YC, MST_TOP + 14]], .9);
+  m += box(x0 - 3, y0 - 4, ZT + ARM_S - 4.5, x1 + 1, y1 + 4, ZT + ARM_S - 3.5, GREYM, tone, .8);
+  // the lines: oxygen and hydrogen up the face of the mast to the arm (upper stage)…
+  const fl = st.flowS > 0, fe = st.flowE > 0, lines = [[-2.5, LOXC], [2.5, LH2C]];
+  const up = lines.map(([dy, c]) => tube([[x1 + 1.2, YC + dy, ZT + 1], [x1 + 1.2, YC + dy, ZT + ARM_S + 3.6]], .8, c, fl)).join('');
+  // …and along the table to the foot of the main stage (its plugs pull back at ignition)
+  const pb = 5*st.plug, xe = XC - R0 - 3 - pb;
+  const base = lines.map(([dy, c]) => tube([[x1 + 1.2, YC + dy, ZT + 1.2], [xe, YC + dy, ZT + 1.2], [xe, YC + dy, ZT + 24]], .8, c, fe)).join('')
+    + box(xe - .5, YC - 5, ZT + 21, XC - R0 + .3 - pb, YC + 5, ZT + 29, CHAR, tone, .8);
+  const front = vis([1, 0, 0]);
+  m = front ? m + up + armSvg(st, pal) : armSvg(st, pal) + up + m;
+  return act('mast', front ? m + base : base + m);
+}
+// the arm swings away at lift-off, about its hinge on the mast
+function armSvg(st, pal){
+  const a = 80*ease(st.arm)*Math.PI/180, d = [Math.cos(a), -Math.sin(a), 0], e = [Math.sin(a), Math.cos(a), 0], H = [MST[1], YC, ZT + ARM_S], Lr = XC - R0 - .4 - MST[1];
+  const at = (t, u, z) => [H[0] + d[0]*t + e[0]*u, H[1] + d[1]*t + e[1]*u, H[2] + z];
+  const ring = t => [at(t, -3, -2.5), at(t, 3, -2.5), at(t, 3, 2.5), at(t, -3, 2.5)];
+  const beam = solid([ring(0), ring(Lr - 2)], ext(pal), { w: 1.3 }), plate = solid([[at(Lr - 2, -4, -4), at(Lr - 2, 4, -4), at(Lr - 2, 4, 4), at(Lr - 2, -4, 4)], [at(Lr, -4, -4), at(Lr, 4, -4), at(Lr, 4, 4), at(Lr, -4, 4)]], ext(CHAR), { w: 1 });
+  const pipes = [[-1.5, LOXC], [1.5, LH2C]].map(([u, c]) => tube([at(0, u, 3.6), at(Lr - 2.5, u, 3.6)], .7, c, st.flowS > 0)).join('');
+  return vis(d) ? beam + pipes + plate : plate + beam + pipes;
+}
+
+/* ---------- smoke, vapour, clouds ---------- */
+const rnd = (() => { let sd = 11; return () => (sd = (sd*16807) % 2147483647)/2147483647; })();
+const emit = (st, p, v, r, life, col, op, g, rel) => st.puffs.push({ x: p[0], y: p[1], z: p[2], vx: v[0], vy: v[1], vz: v[2], r, life, col, op, g, rel, age: 0 });
+const CLOUDS = [[40, 30, 1300, 20], [150, 150, 1450, 24], [10, 130, 1700, 18], [175, 40, 1900, 22], [95, 175, 2200, 20], [130, 70, 2500, 17], [-15, 70, 2800, 22], [165, 125, 3100, 19]];
+function blobs(X, Y, r, cs, col, op){ const c = a => cs.map(([dx, dy, k]) => `<circle cx="${f(X + dx*r)}" cy="${f(Y + dy*r)}" r="${f(k*r)}" ${a}/>`).join('');
+  return `<g opacity="${f(op)}">${c(`fill="${INK}" stroke="${INK}" stroke-width=".8"`)}${c(`fill="${col}"`)}</g>`; }
+const PUFF = [[-.42, .05, .68], [.4, -.12, .64], [0, -.42, .6], [.05, .2, .62]], CLOUD = [[-1.1, .15, .5], [-.4, -.15, .68], [.35, -.1, .62], [1.05, .15, .5], [0, .2, .55]];
+function fx(st, fr){
+  const back = [], front = [], F = fr.F;
+  const behind = q => { const t = dot(sub(q, F.o), F.A); return depthOf(q) < depthOf(F.o.map((v, i) => v + t*F.A[i])); };
+  for (const p of st.puffs){ const q = [p.x, p.y, p.z - (p.rel ? 0 : st.cz)]; if (q[2] < -250) continue; const [X, Y] = P(...q);
+    (behind(q) ? back : front).push({ d: depthOf(q), svg: blobs(X, Y, p.r*CAM_K, PUFF, p.col, Math.sqrt(Math.max(0, 1 - p.age/p.life))*p.op) }); }
+  for (const [x, y, zm, r] of CLOUDS){ const q = [x, y, zm*MU - st.cz]; if (q[2] < -150 || q[2] > 450) continue; const [X, Y] = P(...q);
+    (behind(q) ? back : front).push({ d: depthOf(q), svg: blobs(X, Y, r*CAM_K, CLOUD, '#ffffff', .95) }); }
+  const j = a => a.sort((p, r) => p.d - r.d).map(p => p.svg).join('');
+  return [j(back), j(front)];
+}
+function emitAll(st, dt, fr){
+  // cold gas venting at the top of the tanks, while the rocket waits on the pad
+  if (st.fe > .05 && st.T < 7 && st.cz < 1){ st.eB = (st.eB || 0) - dt; while (st.eB <= 0){ st.eB += .16;
+    for (const [ly, s0, on] of [[R0 + .6, 146, st.fe], [-(R0 + .6), 172, st.fs]]) if (on > .05) emit(st, FW(fr.F, 0, ly, s0), [rnd()*2 - 1, Math.sign(ly)*(5 + 4*rnd()), 5 + 3*rnd()], 1.3, 2 + rnd(), '#ffffff', .85, 3, false); } }
+  // the jets go down the trenches and come out at the edge of the pad as a rolling cloud
+  const I = st.alt < .6 ? .25*st.vul + st.eapOn : 0;
+  if (I > .02){ st.eG = (st.eG || 0) - dt*30*I; while (st.eG <= 0){ st.eG += 1; const [y0, y1] = TRENCH[st.eapOn > .1 ? Math.floor(rnd()*3) : 1];
+    emit(st, [DX + 2, lerp(y0 + 3, y1 - 3, rnd()), 6 + 4*rnd()], [22 + 26*rnd(), (rnd() - .5)*22, 6 + 12*rnd()], 4.5, 2.6 + rnd(), mix('#e7e3da', '#ffffff', rnd()), .95, 15, false); } }
+  // after lift-off the jets hit the table itself: the cloud rolls off its edges
+  if (st.T > 7.6 && st.alt < .25 && st.eapOn > .1){ st.eT = (st.eT || 0) - dt*22; while (st.eT <= 0){ st.eT += 1; const a = rnd()*2*Math.PI, c = Math.cos(a), sn = Math.sin(a);
+    emit(st, [XC + c*40, YC + sn*52, ZT + 3], [c*38, sn*38, 6 + 8*rnd()], 5, 2.6 + rnd(), mix('#e7e3da', '#ffffff', rnd()), .92, 14, false); } }
+  if (st.puffs.length > 150) st.puffs.splice(0, st.puffs.length - 150);
+}
+// small puffs where pyrotechnic bolts and separation rockets fire (they stay with the rocket)
+function sepPuffs(st, pts, out, A){ for (const p of pts) for (let i = 0; i < 3; i++) emit(st, p, out.map((v, j) => v*(14 + 10*rnd()) - A[j]*(30 + 20*rnd()) + (rnd() - .5)*8), 2.2, 1.1 + .4*rnd(), '#ffffff', .95, 6, true); }
+
+/* ---------- labels ---------- */
+const nearPt = (F, r, s, cx = 0, cy = 0) => { const a = dot(CAM_V, F.X), b = dot(CAM_V, F.Y), l = Math.hypot(a, b) || 1; return FW(F, cx + r*a/l, cy + r*b/l, s); };
+function labelItems(st, fr, k){
+  const { F, Fb, Fe, F1, F2, Fs } = fr, near = dot(F.Y, CAM_V) > 0 ? 1 : -1, pad = st.cz < 300, sh = p => [p[0], p[1], p[2] - st.cz], L = [];
+  if (k > .6){
+    if (st.eapS === 0) L.push({ at: FW(Fb(near), 0, near*BY, 75), text: 'POUDRE (PROPERGOL)', on: st.eapOn > .1 });
+    if (st.epcS === 0) L.push({ at: FW(Fe, 0, 0, 74), text: "RÉSERVOIR D'HYDROGÈNE", on: st.flowE > 0 || st.vul > .1 },
+      { at: FW(Fe, 0, 0, 132), text: "RÉSERVOIR D'OXYGÈNE", on: st.flowE > 0 || st.vul > .1 },
+      { at: FW(Fe, 0, 0, 26), text: 'MOTEUR VULCAIN 2', on: st.vul > .1 }, { at: FW(Fe, 6, 0, 28), text: 'TURBOPOMPES', on: st.vul > .1 });
+    L.push({ at: FW(F, 0, 0, 153), text: 'MOTEUR HM7B', on: st.hm7 > .1 }, { at: FW(F, 0, 0, 169), text: "RÉSERVOIRS DE L'ÉTAGE SUPÉRIEUR", on: st.flowS > 0 || st.hm7 > .1 },
+      { at: FW(F, 7, 7, 181), text: 'CASE À ÉQUIPEMENTS', on: false });
+    if (st.satS < 1) L.push({ at: FW(Fs, 0, 0, 205), text: 'SYLDA', on: st.satS > .3 });
+    L.push({ at: FW(F1, 0, 0, 230), text: 'SATELLITE DU HAUT', on: st.satS > 0 && st.satS < .55 }, { at: FW(F2, 0, 0, 197), text: 'SATELLITE DU BAS', on: st.satS > .55 && st.satS < 1 });
+    if (st.fairS === 0) L.push({ at: nearPt(F, R0, 244), text: 'COIFFE', on: false });
+  } else {
+    if (st.fairS === 0) L.push({ at: nearPt(F, R0, 232), text: 'COIFFE', on: false });
+    else L.push({ at: FW(F1, 0, 0, 227), text: 'SATELLITES', on: st.satS > 0 && st.satS < 1 });
+    L.push({ at: nearPt(F, R0, 166), text: 'ÉTAGE SUPÉRIEUR', on: st.hm7 > .1 || st.flowS > 0 });
+    if (st.epcS === 0) L.push({ at: nearPt(Fe, R0, 92), text: 'ÉTAGE PRINCIPAL', on: st.vul > .1 || st.flowE > 0 }, { at: nearPt(Fe, 4.5, 10), text: 'MOTEUR VULCAIN 2', on: st.vul > .1 });
+    if (st.eapS === 0) L.push({ at: nearPt(Fb(near), RB, 80, 0, near*BY), text: 'BOOSTER À POUDRE', on: st.eapOn > .1 });
+  }
+  if (pad){ L.push({ at: sh([MST[1], MST[3], ZT + 225]), text: 'MÂT OMBILICAL', on: st.flowS > 0 || st.flowE > 0 });
+    if (st.arm < .5 && k <= .6) L.push({ at: sh([(MST[1] + XC - R0)/2, YC, ZT + ARM_S + 2.5]), text: 'BRAS OMBILICAL', on: st.flowS > 0 });
+    L.push({ at: sh([TB[1], (TB[2] + TB[3])/2 + 40, (ZG + ZT)/2]), text: 'TABLE DE LANCEMENT', on: false },
+      { at: sh([DX, TRENCH[2][0] + 10, (TR_Z + ZG)/2]), text: 'CARNEAUX', on: st.vul > .1 && st.alt < .6 }); }
+  return L;
+}
+
+/* ---------- the scene ---------- */
+const shiftG = (svg, cz) => { if (!cz) return svg; const d = Dv(0, 0, -cz); return `<g transform="translate(${f(d[0])} ${f(d[1])})">${svg}</g>`; };
+function scene(st, pal){
+  CLOCK = st.clock;
+  const fr = frames(st), k = ease(st.xr || 0), pad = st.cz < 650;
+  let s = pad ? shiftG(padSvg(st, fr, pal), st.cz) : '';
+  const [back, front] = fx(st, fr), mast = pad ? shiftG(mastSvg(st, pal), st.cz) : '';
+  CUTLO = pad ? ZT - st.cz : -1e9;
+  const r = rocketSvg(st, fr, pal, k);
+  CUTLO = -1e9;
+  s += back + (CAM_V[0] >= 0 ? mast + r : r + mast) + front;
+  // once the pad slides down (the rocket has left), nothing is drawn outside the frame, over the page below it
+  const vb = document.getElementById('fig').viewBox.baseVal;
+  if (st.cz > 0 && vb.width) s = `<clipPath id="frameclip"><rect x="${f(vb.x)}" y="${f(vb.y - vb.height)}" width="${f(vb.width)}" height="${f(2*vb.height)}"/></clipPath><g clip-path="url(#frameclip)">${s}</g>`;
+  if (labelsShown()) s += lcCallouts(labelItems(st, fr, k));
+  return s;
+}
+
+/* ---------- what happens (times in seconds from H0) ---------- */
+const STEPS = ['fill', 'launch', 'eapSep', 'fairSep', 'epcSep', 'satSep'];
+const DUR = { fill: 5.5, launch: 12, eapSep: 3.6, fairSep: 4, epcSep: 8, satSep: 6.5 };
+const WARP = [[0, -8], [1.5, -1], [3, 5], [6.5, 12], [9, 50], [12, 140]];   // the lift-off runs nearly in real time, the climb much faster
+const ALT = [[20, .806], [30, 2.7], [40, 6.3], [60, 18], [80, 30], [100, 42], [120, 55], [140, 66], [146, 69], [191, 107], [300, 150], [540, 178], [900, 280], [1490, 640], [1600, 900], [2000, 1800]];
+const VEL = [[7.3, 0], [10, .03], [15, .08], [20, .13], [30, .27], [40, .45], [60, .8], [80, 1.1], [100, 1.4], [120, 1.7], [140, 2], [146, 2], [191, 2.2], [300, 3.3], [540, 6.9], [900, 7.9], [1490, 9.4], [1600, 9.3], [2000, 9]];
+const TILT = [[12, 0], [40, 8], [140, 28], [191, 36], [540, 62], [1490, 72], [2000, 74]];
+const altOf = T => T <= 7.3 ? 0 : T < 20 ? .005*(T - 7.3)**2 : interp(ALT, T);     // km; 5 m/s² at first
+const fresh = () => ({ T: -21600, fe: 0, fs: 0, vul: 0, eapOn: 0, hm7: 0, eb: 0, arm: 0, plug: 0, wet: 0, flowE: 0, flowS: 0,
+  eapS: 0, fairS: 0, epcS: 0, satS: 0, th: 0, zm: 1, sp: 130, lift: 0, cz: 0, alt: 0, v: 0, clock: 0, puffs: [], man: null, q: [], ph: 0, pPh: 0 });
+function derive(st){
+  st.alt = altOf(st.T); st.v = st.T <= 7.3 ? 0 : interp(VEL, st.T); st.th = interp(TILT, st.T); st.eb = cl01((st.T - 7.3)/133);
+  const zu = st.alt*1000*MU; st.lift = Math.min(zu, 24) - 40*cl01((zu - 900)/2500); st.cz = zu - st.lift;
+}
+// mass (t): boosters 37 + 240 of powder each, main stage 14 + 175, upper stage 4.5 + 14.9, equipment bay 1.7, fairing 2.6, Sylda 0.5, satellites 6.5 + 5.5
+function mass(st){
+  const rE = 1 - cl01(st.T/540), rS = 1 - cl01((st.T - 545)/945);
+  return (st.eapS > 0 ? 0 : 2*(37 + 240*(1 - st.eb))) + (st.epcS > 0 ? 0 : 14 + 175*st.fe*rE) + 4.5 + 14.9*st.fs*rS + 1.7 + (st.fairS > 0 ? 0 : 2.6)
+    + (st.satS > .05 ? 0 : 6.5) + (st.satS > .35 ? 0 : .5) + (st.satS > .6 ? 0 : 5.5);
+}
+let ui, looping = false, SIM = false;
+function tick(st, dt){
+  st.clock += dt; let busy = false;
+  if (!st.man && st.q.length) st.man = { kind: st.q.shift(), t: 0 };
+  const M = st.man, fr0 = frames(st);
+  if (M){ busy = true; M.t += dt; const t = M.t, d = DUR[M.kind], u = cl01(t/d);
+    if (M.kind === 'fill'){ st.T = lerp(-21600, -420, ease(u)); st.fe = ease(cl01((t - .3)/3.4)); st.fs = ease(cl01((t - 3.2)/2)); st.flowE = t > .3 && t < 3.7 ? 1 : 0; st.flowS = t > 3.2 && t < 5.2 ? 1 : 0; }
+    else if (M.kind === 'launch'){ const T = st.T = interp(WARP, t);
+      st.vul = cl01(T/1.2); st.eapOn = T < 7.3 ? 0 : T < 130 ? 1 : cl01((140 - T)/10); st.wet = T > -5 && T < 30 ? 1 - cl01((T - 22)/8) : 0;
+      st.arm = cl01((T - 6)/1.8); st.plug = cl01(T/1.5); }
+    else if (M.kind === 'eapSep'){ st.T = lerp(140, 146, u); st.eapS = cl01(t/3.4);
+      if (!M.fx){ M.fx = 1; for (const sd of [-1, 1]){ const Fb = fr0.Fb(sd); sepPuffs(st, [FW(Fb, 0, sd*(BY + RB), 140), FW(Fb, 0, sd*(BY + RB), 10)], fr0.F.Y.map(v => v*sd), fr0.F.A); } } }
+    else if (M.kind === 'fairSep'){ st.T = t < 1.2 ? lerp(146, 191, t/1.2) : lerp(191, 196, (t - 1.2)/2.8); st.fairS = cl01((t - 1.2)/2.6);
+      if (t > 1.2 && !M.fx){ M.fx = 1; const pts = []; for (const sd of [-1, 1]) for (const s0 of [190, 210, 230]) pts.push(FW(fr0.F, 0, sd*R0, s0)); sepPuffs(st, pts, fr0.F.X, fr0.F.A); } }
+    else if (M.kind === 'epcSep'){ st.T = t < 2 ? lerp(196, 540, ease(t/2)) : t < 3 ? lerp(540, 545, t - 2) : lerp(545, 1490, cl01((t - 3)/4.6));
+      st.vul = t < 2 ? 1 : cl01((2.3 - t)/.3); st.epcS = cl01((t - 2.2)/3.4); st.hm7 = cl01((t - 3)/.4)*cl01((d - t)/.4);
+      const z = ease(cl01((t - 2.6)/3)); st.zm = 1 + z; st.sp = lerp(130, 196, z);
+      if (t > 2.2 && !M.fx){ M.fx = 1; const pts = []; for (let i = 0; i < 6; i++){ const a = i/6*2*Math.PI; pts.push(FW(fr0.F, R0*Math.cos(a), R0*Math.sin(a), 156)); } sepPuffs(st, pts, [0, 0, 0], fr0.F.A); } }
+    else if (M.kind === 'satSep'){ st.T = lerp(1490, 2000, u); st.satS = u; }
+    if (t >= d){ st.ph = STEPS.indexOf(M.kind) + 1; st.man = null; st.flowE = st.flowS = 0; st.wet = 0;
+      if (M.kind === 'launch') st.eapOn = 0; if (M.kind === 'epcSep') st.hm7 = 0; }
+  }
+  derive(st);
+  emitAll(st, dt, frames(st));
+  for (const p of st.puffs){ p.age += dt; const dr = Math.max(0, 1 - 1.1*dt); p.vx *= dr; p.vy *= dr; p.vz = p.vz*dr + (p.rel ? 0 : 2*dt);
+    p.x += p.vx*dt; p.y += p.vy*dt; p.z += p.vz*dt; p.r += p.g*dt; }
+  st.puffs = st.puffs.filter(p => p.age < p.life);
+  return busy || st.puffs.length > 0;
+}
+function run(){ if (looping || SIM) return; looping = true; ui.animate(dt => { const b = tick(ui.st, Math.min(dt, .05)); if (!b) looping = false; return b; }); }
+const LBL = ['Remplir les réservoirs', 'Décoller', 'Larguer les boosters', 'Larguer la coiffe', "Larguer l'étage principal", 'Libérer les satellites'];
+const DONE = ['Les réservoirs sont déjà pleins', 'La fusée a déjà décollé', 'Les boosters sont déjà largués', 'La coiffe est déjà larguée', "L'étage principal est déjà largué", 'Les satellites sont déjà libérés'];
+// a button runs its step, and the steps before it that have not been done yet; once the rocket has gone, the first one starts again
+function goTo(st, i){
+  if (i === 0 && st.pPh > 1){ const keep = { pal: st.pal, xr: st.xr, xrT: st.xrT, az: st.az }; Object.assign(st, fresh(), keep); derive(st); return; }
+  if (st.pPh > i) return ui.flash(DONE[i]);
+  for (let j = st.pPh; j <= i; j++) st.q.push(STEPS[j]);
+  st.pPh = i + 1; run();
+}
+const frN = (v, d = 0) => v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+function chrono(T){ const a = Math.abs(T), sg = T < 0 ? '−' : '+';
+  if (a >= 3600) return `H0 ${sg} ${Math.floor(a/3600)} h ${String(Math.round(a % 3600/60)).padStart(2, '0')}`;
+  if (T <= -60) return `H0 − ${Math.round(a/60)} min`;
+  if (a >= 60) return `H0 + ${Math.floor(a/60)} min ${String(Math.floor(a % 60)).padStart(2, '0')} s`;
+  return `H0 ${sg} ${Math.floor(a)} s`; }
+
+ui = mountFigure({
+  fig: '07', turn: 'full', title: 'Fusée Ariane 5',
+  size: [DX, DY, MST_TOP + 8], palette: 'cobalt',
+  state: fresh(),
+  scene,
+  stats: st => [
+    { label: 'Chrono', value: chrono(st.T), small: true },
+    { label: 'Altitude', value: st.alt < 1 ? frN(Math.round(st.alt*1000)) + ' m' : frN(Math.round(st.alt)) + ' km' },
+    { label: 'Vitesse', value: st.v < 1 ? frN(Math.round(st.v*3600)) + ' km/h' : frN(st.v, 1) + ' km/s' },
+    { label: 'Masse', value: frN(Math.round(mass(st))) + ' t' } ],
+  buttons: LBL.map((label, i) => ({ label, onClick: st => goTo(st, i) })),
+  acts: { mast: st => goTo(st, 0), vulcain: st => goTo(st, 1), eap: st => goTo(st, 2), coiffe: st => goTo(st, 3) },
+});
+xrMount(() => ui, () => '');
+// the first button says what it will do (fill the tanks, or start again once the rocket has gone)
+(() => { const r0 = ui.render, st = ui.st;
+  ui.render = () => { r0(); const b = document.querySelector('#btns .act'), t = st.pPh > 1 ? 'Nouveau lancement' : LBL[0]; if (b && b.textContent !== t) b.textContent = t; };
+  ui.render();
+})();
+// tests: ?sim=decoller@0,boosters@14&at=20 presses the buttons at those times (s) in a fast simulation, then draws once;
+// ?shot=1 hides the page around the drawing; ?bench=1 times a redraw
+(() => { const q = new URLSearchParams(location.search), st = ui.st;
+  if (q.has('at')){ const keys = { remplir: 0, decoller: 1, boosters: 2, coiffe: 3, etage: 4, satellites: 5 };
+    const ev = (q.get('sim') || '').split(',').filter(Boolean).map(s => { const [w, t] = s.split('@'); return [keys[w.toLowerCase()], +t]; }).sort((a, b) => a[1] - b[1]);
+    SIM = true; let t = 0, i = 0; const end = +q.get('at');
+    while (t < end){ while (i < ev.length && ev[i][1] <= t) goTo(st, ev[i++][0]); tick(st, 1/60); t += 1/60; }
+    SIM = false; ui.render(); }
+  if (q.get('shot') === '1'){ const cs = document.createElement('style');
+    cs.textContent = '.actions,#stats,.vset,.zchip,body>header,.controls,.made-with,.lgd,.toast{visibility:hidden!important}'; document.head.appendChild(cs); }
+  if (q.get('bench') === '1'){ const t0 = performance.now(); for (let i = 0; i < 5; i++) ui.render(); document.documentElement.dataset.bench = ((performance.now() - t0)/5).toFixed(1); }
+})();
+/* ---------- la page en français ---------- */
+(() => {
+  const tr = { 'Hand-drawn wobble': 'Trait tremblé', 'Colour': 'Couleur', 'View': 'Vue', 'Labels': 'Étiquettes' };
+  document.querySelectorAll('.ctl label').forEach(l => { if (tr[l.textContent]) l.textContent = tr[l.textContent]; });
+  const set = (id, t) => { const e = document.getElementById(id); if (e) e.textContent = t; };
+  set('vreset', 'Vue de face'); set('vspin', 'Faire pivoter'); set('xrb', 'Transparence'); set('lblb', 'Étiquettes');
+  const pn = { mustard: 'moutarde', tomato: 'tomate', mint: 'menthe', cobalt: 'cobalt', blush: 'rose' };
+  document.querySelectorAll('#pals .sw').forEach(b => { if (pn[b.title]) b.title = pn[b.title]; });
+  const mwl = document.querySelector('.made-with a'); if (mwl) mwl.textContent = 'Fait avec Colorfigures';
+  if (/\/figures\/[^/]*$/.test(location.pathname)){
+    const hd = document.querySelector('body > header'); if (hd) hd.insertAdjacentHTML('beforeend', '<span><a href="../" style="color:inherit">← Toutes les figures</a></span>');
+    if (mwl) mwl.insertAdjacentHTML('beforebegin', '<a href="../">← Toutes les figures</a> · '); }
+  addEventListener('load', () => setTimeout(() => {
+    for (const [c, t] of [['.zm', 'Dézoomer'], ['.zp', 'Taille normale'], ['.zi', 'Zoomer']]){ const e = document.querySelector(c); if (e) e.setAttribute('aria-label', t); } }, 0));
+})();
+/* ---------- grand écran et plein écran ---------- */
+(() => {
+  const css = document.createElement('style');
+  css.textContent = `@media (min-width:561px){
+      :root{--figw:max(760px,min(1800px,calc((100vh - 250px)*1.3333)))}
+      body>header,.stage,#fig,.controls,.made-with,.lgd{max-width:var(--figw)!important}
+      html.fs{--figw:min(calc(100vw - 32px),calc((100vh - 24px)*1.3333))}
+      html.fs body{padding-top:10px;padding-bottom:10px}
+      html.fs body>header,html.fs .controls,html.fs .made-with{display:none!important}}
+    @media (min-width:1800px) and (min-height:1050px){.actions,#stats,.vset,.zchip{zoom:1.3}}`;
+  css.textContent += `
+    .zchip .fsb{display:inline-grid;place-items:center}
+    .fsb svg{width:12px;height:12px}`;
+  document.head.appendChild(css);
+  let rt = 0; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => ui.render(), 150); });
+  const root = document.documentElement, enter = root.requestFullscreen || root.webkitRequestFullscreen;
+  if (!enter) return;
+  const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const toggle = () => isFs() ? (document.exitFullscreen || document.webkitExitFullscreen).call(document) : enter.call(root);
+  const icon = out => `<svg viewBox="0 0 16 16" fill="none" stroke="#231e16" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${out
+    ? 'M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5' : 'M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5'}"/></svg>`;
+  let btn = null;
+  const sync = () => { root.classList.toggle('fs', isFs());
+    if (btn){ btn.innerHTML = icon(isFs()); btn.title = isFs() ? 'Quitter le plein écran (F)' : 'Plein écran (F)'; btn.setAttribute('aria-label', btn.title); }
+    dispatchEvent(new Event('resize')); requestAnimationFrame(() => ui.render()); };
+  document.addEventListener('fullscreenchange', sync); document.addEventListener('webkitfullscreenchange', sync);
+  addEventListener('load', () => setTimeout(() => { const chip = document.querySelector('.zchip'); if (!chip) return;
+    btn = document.createElement('button'); btn.type = 'button'; btn.className = 'fsb'; btn.onclick = toggle; chip.prepend(btn); sync(); }, 0));
+  addEventListener('keydown', e => { if (e.key.toLowerCase() !== 'f' || e.metaKey || e.ctrlKey || e.altKey || /input|textarea/i.test(e.target.tagName)) return; e.preventDefault(); toggle(); });
+})();
+</script></body></html>
